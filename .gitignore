@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Object data, customer materials, generated results and backups.
+projects/
+data/
+logs/
+inbox/
+*.dwg
+*.dxf
+*.bak
+
+# Locally bundled third-party runtimes are restored from dependencies.
+vendor/
+runtime_vendor/
+
+# Local editor/Codex state and intermediate implementation materials.
+.codex/
+implementation_pp_*/
+
+# Temporary and generated office files.
+~$*
+*.tmp

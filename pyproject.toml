@@ -1,0 +1,13 @@
+[project]
+name = "fire-audit-ar"
+version = "0.5.8"
+description = "Локальная база данных и полных заданий на пожарные проверки"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+normative-reading = ["pypdf>=5", "Pillow>=10"]
+barriers = ["ezdxf==1.4.4", "pyparsing==3.2.5", "fonttools==4.60.1", "numpy>=1.24", "typing_extensions>=4.6", "openpyxl>=3.1"]
+
+[tool.unittest]
+start-directory = "tests"

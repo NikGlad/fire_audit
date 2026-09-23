@@ -1,0 +1,14 @@
+{
+  "id": "replace_with_unique_case_id",
+  "description": "Замените на описание реального проверенного случая. Этот файл не является готовым эталоном.",
+  "source_dwg": "Полный путь и версия исходного DWG",
+  "normative_basis": "Документ, редакция, пункт, страницы и обоснование применимости",
+  "expert_name": "Кто проверил и утвердил решение",
+  "expected": {
+    "decision": "compliant",
+    "floor": "1",
+    "target_ids": [],
+    "measurement_mm": null
+  },
+  "tolerance_mm": 1
+}

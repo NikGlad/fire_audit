@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "storage_roots",
+      "contains_any": ["клад", "хран", "склад", "архив", "запас"],
+      "candidate_purpose": "складское",
+      "confidence": "candidate",
+      "instruction": "Проверить фактическое использование, оборудование и определения нормативных документов."
+    },
+    {
+      "id": "corridor",
+      "contains_any": ["коридор"],
+      "candidate_purpose": "коридор",
+      "article89_type": "C"
+    },
+    {
+      "id": "vestibule",
+      "contains_any": ["вестибюл", "холл", "фойе", "рекреац"],
+      "candidate_purpose": "вестибюль/холл/фойе",
+      "article89_type": "V"
+    },
+    {
+      "id": "tambour",
+      "contains_any": ["тамбур"],
+      "candidate_purpose": "тамбур",
+      "article89_type": "T"
+    },
+    {
+      "id": "stair",
+      "contains_any": ["лестничная клетка", "лк"],
+      "candidate_purpose": "лестничная клетка",
+      "article89_type": "E_IF_VALID"
+    },
+    {
+      "id": "dining_hall",
+      "contains_any": ["обеденный зал", "столовая", "зал столовой"],
+      "candidate_purpose": "зал без мест для зрителей",
+      "checks": ["СП1_7.1.6_таблица_7", "occupancy"]
+    },
+    {
+      "id": "changing_room",
+      "contains_any": ["гардероб", "раздевал"],
+      "candidate_purpose": "гардеробная/раздевалка",
+      "always_queries": ["maximum_simultaneous_occupants"]
+    },
+    {
+      "id": "fire_post",
+      "contains_any": ["пожарный пост", "помещение пожарного поста"],
+      "candidate_purpose": "пожарный пост",
+      "checks": ["stage_fire_post_explanation"]
+    }
+  ],
+  "ambiguity_policy": "Если назначение влияет на применимость нормы и не может быть доказано по плану, задать конкретный вопрос пользователю."
+}
+

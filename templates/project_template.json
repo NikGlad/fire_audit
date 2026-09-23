@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "slug": "новый_объект",
+  "name": "Новый объект",
+  "dwg": {
+    "path": "",
+    "document_name": "",
+    "locked_document_id": "",
+    "save_allowed": false,
+    "delete_allowed": false
+  },
+  "dates": {
+    "gpzu": "",
+    "audit_date": ""
+  },
+  "classification": {
+    "functional_classes": [],
+    "customer_functional_class": "",
+    "fire_resistance_degree": "",
+    "constructive_fire_hazard_class": "",
+    "building_category": "",
+    "room_category_default": "",
+    "room_categories_excluded_for_worst_case": []
+  },
+  "geometry": {
+    "floors": null,
+    "height_m": null,
+    "height_source": "",
+    "floor_to_ceiling_height_m": null,
+    "floor_to_ceiling_height_source": "",
+    "building_volume_m3": null,
+    "building_volume_method": "",
+    "fire_compartment_division_description": "",
+    "fire_compartments": [],
+    "max_floor_area_in_compartment_m2": null,
+    "required_max_floor_area_m2": null,
+    "floor_level_types": {},
+    "attic_present": null,
+    "technical_attic_confirmed": null
+  },
+  "people": {
+    "known_total": null,
+    "rooms": {},
+    "worst_case_when_unknown": true,
+    "physically_possible_limit_required": true
+  },
+  "accessibility": {
+    "mgn_description": "",
+    "m4_description": "",
+    "m4_query_required": true,
+    "accessible_floors": []
+  },
+  "building_parts": {
+    "abk_description": "",
+    "abk_type": "unknown",
+    "embedded_parts": [],
+    "insertions": [],
+    "additions": [],
+    "multifunctional_parts_independent": null,
+    "open_type_2_stairs": [],
+    "food_service_block": []
+  },
+  "fire_systems": {
+    "aup_confirmed": null,
+    "aup_required_whole_building": null,
+    "aup_protected_area_percent": null,
+    "vpv_required": null,
+    "external_fire_water_required": null,
+    "soue_required_type": "",
+    "smoke_control_required": null,
+    "firefighter_lifts_description": "",
+    "fire_post_room": "",
+    "fire_post_confirmed": null,
+    "pump_room_present": null,
+    "pump_room_systems": [],
+    "diesel_pumps_present": null
+  },
+  "technology_and_storage": {
+    "open_floor_openings": null,
+    "cooled_rooms": [],
+    "pir_panels_present": null,
+    "rack_storage_height_m": null,
+    "room_clear_height_m": null,
+    "stored_products": [],
+    "aerosols_present": null,
+    "hazardous_substances_present": null,
+    "boiler_fuel": "",
+    "vehicle_service_combustible_storage": null
+  },
+  "evacuation": {
+    "stairs_evacuation_description": "",
+    "smoke_free_stairwells_description": "",
+    "specific_stairs": []
+  },
+  "provided_materials": {
+    "plans": true,
+    "facades_description": "",
+    "sections_description": "",
+    "roof_description": "",
+    "explication": null
+  },
+  "confirmed_customer_inputs": [],
+  "computed_assumptions": [],
+  "open_questions": [],
+  "notes": ""
+}

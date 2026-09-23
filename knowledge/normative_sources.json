@@ -1,0 +1,20 @@
+{
+  "primary_repository": "https://github.com/NikGlad/fire-docs.git",
+  "repository_first_folder": "рабочая",
+  "vniipo_folder": "письма ВНИИПО",
+  "local_seed_relative_to_app": "../fire-docs-main.zip",
+  "official_internet_domains": [
+    "pravo.gov.ru",
+    "mchs.gov.ru",
+    "rst.gov.ru"
+  ],
+  "source_priority": [
+    "customer_repository",
+    "federal_laws_and_mandatory_acts",
+    "order_2594_exact_item",
+    "fire_safety_rules_1479",
+    "vniipo_interpretation",
+    "official_internet_actuality_check"
+  ],
+  "do_not_silently_replace_repository_edition": true
+}

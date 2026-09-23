@@ -1,0 +1,190 @@
+{
+  "schema_version": 2,
+  "id": "pp_global_drawing_profile",
+  "status": "verified",
+  "scope": "all_projects",
+  "drawing_units": "Millimeters",
+  "output_layer": "экспертиза противопожарные преграды",
+  "barrier_lineweight": 50,
+  "barrier_lineweight_mm": 0.5,
+  "legend": [
+    {
+      "key": "wall_1",
+      "name": "Противопожарная стена 1-го типа (REI 150)",
+      "color_index": 2
+    },
+    {
+      "key": "wall_2",
+      "name": "Противопожарная стена 2-го типа (REI 45)",
+      "color_index": 30
+    },
+    {
+      "key": "partition_1",
+      "name": "Противопожарная перегородка 1-го типа (EI 45)",
+      "color_index": 6
+    },
+    {
+      "key": "partition_2",
+      "name": "Противопожарная перегородка 2-го типа (EI 15)",
+      "color_index": 5
+    },
+    {
+      "key": "rated_partition_30",
+      "name": "Перегородка с пределом огнестойкости (R)EI(W) 30",
+      "color_index": 4
+    },
+    {
+      "key": "corridor_REI15",
+      "name": "Ограждение общего коридора (R)EI(W) 15, К0",
+      "color_index": 94
+    }
+  ],
+  "category": {
+    "layer": "экспертиза категории",
+    "entity_type": "DBText",
+    "height": 500,
+    "rotation": 0,
+    "color_index": 1,
+    "linetype": "ByLayer",
+    "linetype_scale": 200,
+    "text_style": "Битекс",
+    "font_file": "isocpeur.ttf",
+    "font_family": "ISOCPEUR",
+    "width_factor": 0.8,
+    "oblique_angle": 15,
+    "horizontal_alignment": "Left",
+    "vertical_alignment": "Baseline"
+  },
+  "callout": {
+    "entity_type": "MText",
+    "text_style": "ЭКСПЕРТИЗА",
+    "font_file": "tahoma.ttf",
+    "text_height": 1200,
+    "width": 28166.5456643612,
+    "attachment": "TopLeft",
+    "line_spacing": 1,
+    "leader_geometry": {
+      "entity_type": "LINE",
+      "arrowhead": false,
+      "landing": false,
+      "linetype": "ByLayer",
+      "lineweight": -1,
+      "color_index": 256,
+      "all_properties_must_be_by_layer": true,
+      "explicit_lineweight_50_forbidden": true,
+      "geometry_rule": "От конца выноски у надписи до проверенной конструкции; длина и направление определяются фактическим планом и не копируются как постоянное число."
+    },
+    "door_variant": {
+      "entity_type": "MText",
+      "text_style": "mytext",
+      "font_file": "isocpeur.ttf",
+      "text_height": 1735.977127384708,
+      "width": 43220.39179608598,
+      "attachment": "TopLeft",
+      "line_spacing_style": 1,
+      "line_spacing_factor": 1.0,
+      "direction_code": 5,
+      "style_width_factor": 0.8,
+      "style_oblique_angle_degrees": 14.99997778074544
+    }
+  },
+  "legend_text": {
+    "entity_type": "MText",
+    "text_style": "ЭКСПЕРТИЗА",
+    "font_file": "tahoma.ttf",
+    "text_height": 300,
+    "width": 9952.592142014299,
+    "attachment": "TopLeft",
+    "line_spacing": 1,
+    "width_factor": 1.0,
+    "oblique_angle": 0.0
+  },
+  "dimensions": {
+    "text_style": "mytext",
+    "text_height": 300.0,
+    "dimension_style": "ISO-25",
+    "arrow_size": 2.5,
+    "arrow_block": "_None",
+    "arrowheads_visible": false,
+    "scale": 1,
+    "font_file": "isocpeur.ttf",
+    "width_factor": 0.8,
+    "oblique_angle": 14.99997778074544,
+    "linetype_scale": 100.0,
+    "lineweight": 0,
+    "variables": {
+      "dimasz": 2.5,
+      "dimexo": 0.0,
+      "dimdli": 3.75,
+      "dimexe": 0.0,
+      "dimtih": 0,
+      "dimtoh": 0,
+      "dimtad": 1,
+      "dimzin": 8,
+      "dimtxt": 300.0,
+      "dimcen": 2.5,
+      "dimaltf": 0.03937007874016,
+      "dimgap": 0.625,
+      "dimaltd": 3,
+      "dimtofl": 1,
+      "dimdec": 0,
+      "dimtdec": 0,
+      "dimalttd": 3,
+      "dimdsep": 44,
+      "dimtolj": 0,
+      "dimtzin": 8,
+      "dimblk": "_None",
+      "dimblk1": "",
+      "dimblk2": "",
+      "dimldrblk": "_None",
+      "dimscale": 1,
+      "dimlfac": 1,
+      "dimlunit": 2,
+      "dimjust": 0,
+      "dimtmove": 0,
+      "dimclrd": 0,
+      "dimclre": 0,
+      "dimclrt": 0,
+      "dimse1": 0,
+      "dimse2": 0,
+      "dimsd1": 0,
+      "dimsd2": 0,
+      "dimtsz": 0,
+      "dimtix": 0,
+      "dimsoxd": 0,
+      "dimatfit": 3
+    }
+  },
+  "unresolved_fields": [],
+  "notes": [
+    "Цвета существующих типов брать из рабочей рамки рядом с исходными планами; при расхождении с этим профилем фиксировать расхождение и применять утверждённую рамку текущего объекта.",
+    "Для нового типа преграды назначить новый отличимый цвет, добавить пояснение в рамку и применять его единообразно на всех планах текущего объекта.",
+    "Вес только линий самих противопожарных преград и их образцов в легенде — 50. Для лучей цвет, тип линии и вес строго ByLayer; вес 50 для лучей запрещён.",
+    "Координаты, длины выносок, номера помещений, AutoCAD-id и другие фактические значения определять заново для каждого объекта."
+  ],
+  "stair_enclosure_rule": {
+    "id": "stair_enclosures_not_drawn_separately",
+    "scope": "all_projects_barrier_scheme_drawing_convention",
+    "draw_separate_enclosure": false,
+    "independent_door_and_window_rules_unchanged": true
+  },
+  "completion_rules": {
+    "callout_rays_all_properties_by_layer": true,
+    "callout_ray_lineweight_50_forbidden": true,
+    "general_barrier_opening_requirements_are_recorded_in_legend": true,
+    "generic_barrier_door_callouts_are_forbidden": true,
+    "specific_door_callout_requires_independent_remark_or_norm": true,
+    "specific_door_callout_is_separate_from_explanation_text_and_rays": true,
+    "grouped_specific_door_callout_requires_one_ray_per_target": true,
+    "special_slab_requires_table21_comparison_record": true,
+    "slab_callout_when_special_limit_exceeds_baseline": true,
+    "large_storage_and_production_adjacencies_require_itemized_review": true,
+    "abk_insertions_embedded_parts_and_annexes_are_f4_3_in_all_checks": true,
+    "escape_route_rule_selected_by_gpzu_date": true,
+    "escape_route_space_types_include_corridors_halls_foyers_lobbies_and_galleries": true,
+    "escape_route_full_contour_includes_toilet_and_sanitary_boundaries": true,
+    "legend_keys_must_equal_actually_drawn_barrier_keys": true,
+    "all_repeated_legend_frames_must_match": true,
+    "unused_legend_rows_must_be_removed_from_result_copy": true
+  }
+}

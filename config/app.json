@@ -1,0 +1,30 @@
+{
+  "application_name": "Подготовка задания на пожарную проверку",
+  "version": "0.5.8",
+  "normative_repository": "https://github.com/NikGlad/fire-docs.git",
+  "local_seed_zip": "../fire-docs-main.zip",
+  "normative_search_order": [
+    "рабочая",
+    "письма ВНИИПО",
+    "официальные интернет-источники"
+  ],
+  "autocad_connector_required": "AUTOM8LABS MCP Connector for AutoCAD",
+  "default_dwg_save_allowed": false,
+  "source_dwg_overwrite_allowed": false,
+  "result_dwg_copy_required": true,
+  "default_delete_allowed": false,
+  "default_dry_run": true,
+  "project_folder_pattern": "ГГГГ-ММ-ДД_Краткое_название",
+  "supported_modes": [
+    "stage",
+    "compliance",
+    "article89",
+    "actualization_protocol",
+    "ar_assessment_transfer",
+    "ar_plan_preparation",
+    "ar_plan_comparison",
+    "protocol",
+    "barrier_assessment",
+    "du_assessment"
+  ]
+}

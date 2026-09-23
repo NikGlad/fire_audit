@@ -1,0 +1,4 @@
+# Installed locally in runtime_vendor. Bundled Python provides numpy and typing_extensions.
+ezdxf==1.4.4
+pyparsing==3.2.5
+fonttools==4.60.1

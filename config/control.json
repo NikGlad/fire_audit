@@ -1,0 +1,5 @@
+{
+  "command": "C:\\Program Files\\Autodesk\\ApplicationPlugins\\AUTOM8LABS.MCPConnectorAutoCAD.bundle\\Contents\\Bridge\\MCPConnectorAutoCAD.Bridge.exe",
+  "timeout": 30,
+  "note": "Используется только официальный AUTOM8LABS Bridge. Программа не меняет настройки Codex и не выдаёт автоматических разрешений на изменения."
+}
