@@ -61,8 +61,7 @@ def preparation_errors(project: dict[str, Any], profile: dict[str, Any]) -> list
             errors.append("Не представлены документы СТУ")
         if data.get("refrigeration_present") is True and data.get("refrigeration_equipment_rooms_confirmed") is not True:
             errors.append("Для СТУ нужно уточнить помещения с холодильными камерами, являющимися оборудованием")
-    if data.get("additional_documents_reviewed") is not True:
-        errors.append("Не завершён учёт дополнительных документов и ответов заказчика")
+    # Informational user flag only; the assistant must review sources independently.
     if data.get("preparation_completed") is not True:
         errors.append("Не завершена подготовка планов к оценке ПП")
     if profile.get("status") != "verified" or profile.get("unresolved_fields"):

@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from fire_audit.core import FireAuditApp
 from fire_audit.io_utils import atomic_write_text, read_json
 from fire_audit.norm_lock import NormativeUpdateBusy
-from fire_audit.projects import manual_text_value
+from fire_audit.projects import CHANGE_CATEGORIES, change_categories, manual_text_value
 from fire_audit.control import project_digest
 from fire_audit.barrier_ui import AdditionalDataPanel
 
@@ -27,20 +27,9 @@ ROOT = Path(__file__).resolve().parent
 def number_to_ui(value: object) -> str:
     if value is None or value == "":
         return ""
+    if isinstance(value, str):
+        return value
     return str(value).replace(".", ",")
-
-
-def ui_to_optional_positive_float(value: str, label: str) -> float | None:
-    text = value.strip().replace(",", ".")
-    if not text:
-        return None
-    try:
-        number = float(text)
-    except ValueError as exc:
-        raise ValueError(f"Поле «{label}» должно содержать число в метрах") from exc
-    if number <= 0:
-        raise ValueError(f"Поле «{label}» должно быть больше нуля")
-    return number
 
 
 class FireAuditGUI(tk.Tk):
@@ -99,6 +88,7 @@ class FireAuditGUI(tk.Tk):
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
         self._build_project_tab()
+        self._build_change_log_tab()
         self.additional_data_panel = AdditionalDataPanel(self)
         self.barrier_panel = self.additional_data_panel  # Compatibility with saved integrations.
         self._build_run_tab()
@@ -130,13 +120,13 @@ class FireAuditGUI(tk.Tk):
         row = self._entry(form, row, "fire_degree", "Степень огнестойкости")
         row = self._entry(form, row, "constructive_class", "Класс конструктивной пожарной опасности")
         row = self._entry(form, row, "building_category", "Категория здания")
-        row = self._entry(form, row, "height_sp1", "Высота по п. 3.1 СП 1 (м)")
-        row = self._entry(form, row, "f5_floor_to_ceiling_height", "Высота от пола до потолка для зданий Ф5 (м)")
+        row = self._entry(form, row, "height_sp1", "Высота по п. 3.1 СП 1 (м; можно с пояснениями)")
+        row = self._entry(form, row, "f5_floor_to_ceiling_height", "Высота от пола до потолка для зданий Ф5 (м; можно с пояснениями)")
         row = self._entry(form, row, "fire_compartment_division", "Деление на пожарные отсеки")
         for key, label in (
             ("mgn", "Есть МГН"),
             ("m4", "Есть МГН группы М4"),
-            ("abk", "Есть АБК"),
+            ("abk", "Есть АБК (для зданий Ф5)"),
             ("fire_lifts", "Есть лифты для пожарных"),
             ("all_stairs", "Все лестницы эвакуационные"),
             ("smoke_free_stairwells", "Наличие незадымляемых лестничных клеток"),
@@ -159,6 +149,124 @@ class FireAuditGUI(tk.Tk):
         ttk.Button(buttons, text="Проверить заполнение", command=self.validate_project).pack(side="left", padx=3)
         ttk.Button(buttons, text="Открыть project.json", command=self.open_project_json).pack(side="left", padx=3)
         form.columnconfigure(1, weight=1)
+
+    def _build_change_log_tab(self) -> None:
+        tab = ttk.Frame(self.tabs, padding=12)
+        self.tabs.add(tab, text="Изменения объекта")
+        ttk.Label(tab, text="История изменений выбранного объекта доступна во всех видах работ.",
+                  style="Heading.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
+
+        self.change_date = tk.StringVar(value=datetime.now().date().isoformat())
+        self.change_category_vars = {
+            name: tk.BooleanVar(value=name == "Планы") for name in CHANGE_CATEGORIES
+        }
+        self.change_scope = tk.StringVar()
+        self.change_source = tk.StringVar()
+        for row, label, variable in (
+            (1, "Дата изменения (ГГГГ-ММ-ДД)", self.change_date),
+            (3, "Затронутые листы, помещения, разделы", self.change_scope),
+            (4, "Источник: документ, лист или сообщение", self.change_source),
+        ):
+            ttk.Label(tab, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            entry = ttk.Entry(tab, textvariable=variable, width=78)
+            entry.grid(row=row, column=1, columnspan=3, sticky="ew", padx=8, pady=3)
+            self._enable_widget_clipboard(entry, editable=True)
+        ttk.Label(tab, text="Виды изменений (можно выбрать несколько)").grid(
+            row=2, column=0, sticky="w", pady=3)
+        category_frame = ttk.Frame(tab)
+        category_frame.grid(row=2, column=1, columnspan=3, sticky="w", padx=8, pady=3)
+        for index, (name, variable) in enumerate(self.change_category_vars.items()):
+            ttk.Checkbutton(category_frame, text=name, variable=variable).grid(
+                row=index // 3, column=index % 3, sticky="w", padx=(0, 16), pady=2)
+        ttk.Label(tab, text="Что изменилось").grid(row=5, column=0, sticky="nw", pady=3)
+        self.change_description = tk.Text(tab, height=4, wrap="word", undo=True, font=("Segoe UI", 10))
+        self.change_description.grid(row=5, column=1, columnspan=3, sticky="nsew", padx=8, pady=3)
+        self._enable_text_clipboard(self.change_description)
+        ttk.Label(tab, text="На что может повлиять").grid(row=6, column=0, sticky="nw", pady=3)
+        self.change_impact = tk.Text(tab, height=3, wrap="word", undo=True, font=("Segoe UI", 10))
+        self.change_impact.grid(row=6, column=1, columnspan=3, sticky="nsew", padx=8, pady=3)
+        self._enable_text_clipboard(self.change_impact)
+        ttk.Button(tab, text="Добавить запись в историю", command=self.add_project_change).grid(
+            row=7, column=1, sticky="w", padx=8, pady=8)
+        ttk.Label(tab, text="История (новые записи сверху; прежние записи сохраняются)",
+                  style="Heading.TLabel").grid(row=8, column=0, columnspan=4, sticky="w", pady=(10, 4))
+        self.change_tree = ttk.Treeview(tab, columns=("date", "category", "scope", "description"),
+                                        show="headings", height=9)
+        for key, label, width in (("date", "Дата", 115), ("category", "Виды", 230),
+                                  ("scope", "Где", 215), ("description", "Изменение", 470)):
+            self.change_tree.heading(key, text=label)
+            self.change_tree.column(key, width=width, stretch=key == "description")
+        self.change_tree.grid(row=9, column=0, columnspan=4, sticky="nsew")
+        self.change_tree.bind("<<TreeviewSelect>>", self._show_selected_change)
+        self._enable_tree_copy(self.change_tree)
+        self.change_details = tk.Text(tab, height=5, wrap="word", font=("Segoe UI", 10), state="disabled")
+        self.change_details.grid(row=10, column=0, columnspan=4, sticky="nsew", pady=(6, 0))
+        self._enable_text_clipboard(self.change_details, editable=False)
+        tab.columnconfigure(1, weight=1)
+        tab.rowconfigure(9, weight=1)
+
+    def refresh_change_log(self) -> None:
+        for item_id in self.change_tree.get_children():
+            self.change_tree.delete(item_id)
+        changes = self.current_project.get("change_log", []) if self.current_slug else []
+        for entry in sorted(changes, key=lambda item: (item["event_date"], item["recorded_at"]), reverse=True):
+            self.change_tree.insert("", "end", iid=entry["id"], values=(
+                entry["event_date"], ", ".join(change_categories(entry)), entry.get("affected_scope", ""),
+                entry["description"].replace("\n", " ")[:150]))
+        self._show_selected_change()
+
+    def _show_selected_change(self, event=None) -> None:
+        selected = self.change_tree.selection()
+        entry = next((item for item in self.current_project.get("change_log", [])
+                      if selected and item.get("id") == selected[0]), None)
+        value = "" if entry is None else (
+            f"Дата изменения: {entry['event_date']}   Записано: {entry['recorded_at']}\n"
+            f"Виды: {', '.join(change_categories(entry))}   Где: {entry.get('affected_scope', '')}\n"
+            f"Источник: {entry['source_reference']}\n"
+            f"Изменение: {entry['description']}\n"
+            f"Возможное влияние: {entry.get('impact_notes', '')}")
+        self.change_details.configure(state="normal")
+        self.change_details.delete("1.0", "end")
+        self.change_details.insert("1.0", value)
+        self.change_details.configure(state="disabled")
+
+    def _collect_change_draft(self, *, required: bool = False) -> dict | None:
+        values = dict(
+            event_date=self.change_date.get().strip(),
+            categories=[name for name, variable in self.change_category_vars.items() if variable.get()],
+            description=self.change_description.get("1.0", "end").strip(),
+            affected_scope=self.change_scope.get().strip(),
+            source_reference=self.change_source.get().strip(),
+            impact_notes=self.change_impact.get("1.0", "end").strip())
+        # Date and category have defaults; they alone do not constitute an event.
+        if not required and not any(values[key] for key in (
+                "description", "affected_scope", "source_reference", "impact_notes")):
+            return None
+        return self.app.projects.build_change(**values)
+
+    def _clear_saved_change_draft(self) -> None:
+        self.change_description.delete("1.0", "end")
+        self.change_impact.delete("1.0", "end")
+        self.change_scope.set("")
+        self.change_source.set("")
+
+    def add_project_change(self) -> None:
+        if not self.current_slug:
+            messagebox.showwarning("Изменения объекта", "Сначала выберите или создайте объект", parent=self)
+            return
+        try:
+            change = self._collect_change_draft(required=True)
+            project = self._update_project_from_form()
+            self.additional_data_panel.update_project_for_save(project)
+            project.setdefault("change_log", []).append(change)
+            self.current_project = self.app.projects.save(self.current_slug, project)["project"]
+            self._clear_saved_change_draft()
+            self._load_project_form()
+            self.refresh_change_log()
+            self.refresh_projects()
+            self.status_var.set("Изменение добавлено; паспорт и дополнительные данные сохранены")
+        except Exception as exc:
+            messagebox.showerror("Изменения объекта", str(exc), parent=self)
 
     def _scroll_current_tab(self, event: tk.Event) -> str | None:
         """Scroll the active tab when the widget under the pointer has no own scrolling."""
@@ -373,6 +481,7 @@ class FireAuditGUI(tk.Tk):
         self.task_variant_values = {
             "Полная проверка с AutoCAD": "full_execution",
             "Анализ и задание в Word": "analysis_word",
+            "Нормы для объекта": "object_norms",
         }
         task_variant_combo = ttk.Combobox(
             tab, textvariable=self.task_variant_var, values=list(self.task_variant_values), state="readonly", width=30
@@ -384,19 +493,24 @@ class FireAuditGUI(tk.Tk):
         ttk.Label(tab, text="Запуски выбранного объекта", style="Heading.TLabel").grid(
             row=2, column=0, columnspan=4, sticky="w", pady=(18, 6)
         )
-        self.run_tree = ttk.Treeview(tab, columns=("mode", "variant", "status", "created"), show="headings", height=12)
+        self.run_tree = ttk.Treeview(tab, columns=("mode", "iteration", "variant", "plans", "status", "created"), show="headings", height=12)
         self.run_tree.heading("mode", text="Режим")
+        self.run_tree.heading("iteration", text="Итерация")
         self.run_tree.heading("variant", text="Результат")
+        self.run_tree.heading("plans", text="Планы")
         self.run_tree.heading("status", text="Статус")
         self.run_tree.heading("created", text="Создан")
         self.run_tree.column("mode", width=170)
+        self.run_tree.column("iteration", width=75)
         self.run_tree.column("variant", width=210)
+        self.run_tree.column("plans", width=110)
         self.run_tree.column("status", width=130)
         self.run_tree.column("created", width=220)
         self.run_tree.grid(row=3, column=0, columnspan=4, sticky="nsew")
         self._enable_tree_copy(self.run_tree)
         ttk.Button(tab, text="Открыть папку задания", command=self.open_run_folder).grid(row=4, column=0, sticky="w", pady=8)
         ttk.Button(tab, text="Скопировать выбранное задание", command=self.copy_run_task).grid(row=4, column=1, sticky="w", pady=8)
+        ttk.Button(tab, text="Открыть реестр объекта", command=self.open_project_history).grid(row=4, column=2, sticky="w", pady=8)
         self.run_info = tk.Text(tab, height=11, wrap="word", font=("Segoe UI", 10))
         self.run_info.grid(row=5, column=0, columnspan=4, sticky="nsew", pady=(8, 0))
         self._enable_text_clipboard(self.run_info, editable=False)
@@ -456,10 +570,13 @@ class FireAuditGUI(tk.Tk):
         ttk.Button(right, text="Сохранить с резервной копией", command=self.save_knowledge_file).pack(anchor="e", pady=6)
 
     def refresh_projects(self) -> None:
+        selected_slug = self.current_slug
         self.project_rows = self.app.projects.list_projects()
         self.project_list.delete(0, "end")
         for row in self.project_rows:
             self.project_list.insert("end", row.get("name", row.get("slug", "")))
+        if selected_slug:
+            self._select_project_by_slug(selected_slug, load_form=False)
         self.status_var.set(f"Объектов: {len(self.project_rows)}")
 
     def _on_project_selected(self, event=None) -> None:
@@ -470,6 +587,7 @@ class FireAuditGUI(tk.Tk):
         self.current_slug = row["slug"]
         self.current_project = self.app.projects.load(self.current_slug)
         self._load_project_form()
+        self.refresh_change_log()
         self.refresh_runs()
 
     def _select_project_by_slug(self, slug: str, *, load_form: bool = True) -> bool:
@@ -546,13 +664,8 @@ class FireAuditGUI(tk.Tk):
         c["constructive_fire_hazard_class"] = self.fields["constructive_class"].get().strip()
         c["building_category"] = self.fields["building_category"].get().strip()
         geometry = p.setdefault("geometry", {})
-        geometry["height_m"] = ui_to_optional_positive_float(
-            self.fields["height_sp1"].get(), "Высота по п. 3.1 СП 1"
-        )
-        geometry["floor_to_ceiling_height_m"] = ui_to_optional_positive_float(
-            self.fields["f5_floor_to_ceiling_height"].get(),
-            "Высота от пола до потолка для зданий Ф5",
-        )
+        geometry["height_m"] = self.fields["height_sp1"].get().strip() or None
+        geometry["floor_to_ceiling_height_m"] = self.fields["f5_floor_to_ceiling_height"].get().strip() or None
         accessibility = p.setdefault("accessibility", {})
         accessibility.pop("mgn_present", None)
         accessibility.pop("m4_present", None)
@@ -599,6 +712,7 @@ class FireAuditGUI(tk.Tk):
     def save_project(self) -> None:
         created_new = False
         try:
+            change = self._collect_change_draft()
             if not self.current_slug:
                 name = self.fields["name"].get().strip()
                 if not name:
@@ -611,12 +725,21 @@ class FireAuditGUI(tk.Tk):
                 self.current_project = self.app.projects.create(name)
                 self.current_slug = self.current_project["slug"]
                 created_new = True
-            result = self.app.projects.save(self.current_slug, self._update_project_from_form())
+            project = self._update_project_from_form()
+            if change is not None:
+                project.setdefault("change_log", []).append(change)
+            self.additional_data_panel.update_project_for_save(project, new_project=created_new)
+            result = self.app.projects.save(self.current_slug, project)
             self.current_project = result["project"]
+            if change is not None:
+                self._clear_saved_change_draft()
             saved_slug = self.current_slug
             self.refresh_projects()
             self._select_project_by_slug(saved_slug)
-            message = "Новый объект создан, выбран в списке и сохранён" if created_new else "Паспорт объекта сохранён"
+            message = ("Новый объект создан; паспорт и дополнительные данные сохранены"
+                       if created_new else "Паспорт объекта и дополнительные данные сохранены")
+            if change is not None:
+                message += ". Запись добавлена в историю изменений объекта"
             messagebox.showinfo("Сохранено", message, parent=self)
         except Exception as exc:
             if created_new:
@@ -652,14 +775,40 @@ class FireAuditGUI(tk.Tk):
             messagebox.showwarning("Запуск", "Сначала выберите объект", parent=self)
             return
         try:
-            saved = self.app.projects.save(self.current_slug, self._update_project_from_form())
-            self.current_project = saved["project"]
-            mode = self.mode_values[self.mode_var.get()]
+            candidate_project = self._update_project_from_form()
             variant_values = getattr(self, "task_variant_values", {"Полная проверка с AutoCAD": "full_execution"})
             variant_var = getattr(self, "task_variant_var", None)
             variant_label = variant_var.get() if variant_var is not None else "Полная проверка с AutoCAD"
             task_variant = variant_values[variant_label]
-            result = self.app.runs.create(self.current_slug, mode, task_variant)
+            # Normative inventory covers the whole selected object, regardless of the work mode shown above.
+            mode = "compliance" if task_variant == "object_norms" else self.mode_values[self.mode_var.get()]
+            baseline = self.app.runs.comparison_baseline(self.current_slug, mode, task_variant)
+            plan_change_status = None
+            plan_change_note = ""
+            if baseline:
+                answer = messagebox.askyesnocancel(
+                    "Планы для повторной проверки",
+                    "Сравниваем с непосредственно предыдущей итерацией этого же вида работы: "
+                    f"№ {baseline['work_iteration']}, запуск {baseline['run_id']}.\n\n"
+                    "Для новой итерации представлены новые или изменённые планы относительно этой предыдущей?\n\n"
+                    "Да — планы новые/изменены; Нет — планы прежние; Отмена — не создавать задание.",
+                    parent=self,
+                )
+                if answer is None:
+                    return
+                plan_change_status = "new" if answer else "same"
+                if answer:
+                    plan_change_note = simpledialog.askstring(
+                        "Что изменилось в планах?",
+                        "Если известно, укажите изменённые листы, этажи, помещения или разделы. "
+                        "Можно оставить пустым — помощник уточнит это при сравнении.",
+                        parent=self,
+                    ) or ""
+            saved = self.app.projects.save(self.current_slug, candidate_project)
+            self.current_project = saved["project"]
+            result = self.app.runs.create(self.current_slug, mode, task_variant,
+                                          plan_change_status=plan_change_status,
+                                          plan_change_note=plan_change_note)
             self.refresh_runs()
             self.run_tree.selection_set(result["run"]["run_id"])
             self.run_tree.see(result["run"]["run_id"])
@@ -673,6 +822,9 @@ class FireAuditGUI(tk.Tk):
             self.run_info.insert("1.0", f"Задание создано и скопировано в буфер обмена:\n{result['task_file']}\n\n"
                 f"Объект: {self.current_slug}\nЗапуск: {result['run']['run_id']}\n\n"
                 f"Результат: {result['run']['task_variant_label']}\n\n"
+                f"Итерация этого вида: {result['run'].get('plan_revision', {}).get('work_iteration', 1)}\n"
+                f"Планы: {result['run'].get('plan_revision', {}).get('status', 'не уточнено')}\n"
+                f"Сравнение с запуском: {result['run'].get('plan_revision', {}).get('comparison_run_id', '') or 'нет'}\n\n"
                 "Вставьте текст в чат объекта. В нём уже находятся снимок паспорта, все относящиеся правила, "
                 "требования к выбранному результату и контроль качества.")
             messagebox.showinfo("Задание готово", "Задание создано и скопировано в буфер обмена.", parent=self)
@@ -686,9 +838,13 @@ class FireAuditGUI(tk.Tk):
             self.run_tree.delete(item)
         if not self.current_slug:
             return
+        plan_labels = {"initial": "первый прогон", "same": "те же", "new": "новые/изменены",
+                       "unconfirmed": "не уточнено", "unknown": "нет данных"}
         for row in self.app.runs.list_runs(self.current_slug):
             self.run_tree.insert("", "end", iid=row["run_id"], values=(
-                row["mode_label"], row["task_variant_label"], row["status"], row["created_at"]
+                row["mode_label"], row["work_iteration"], row["task_variant_label"],
+                plan_labels.get(row["plan_change_status"], row["plan_change_status"]),
+                row["status"], row["created_at"]
             ))
         if selected and self.run_tree.exists(selected):
             self.run_tree.selection_set(selected)
@@ -719,6 +875,16 @@ class FireAuditGUI(tk.Tk):
         run_id = self._selected_run_id()
         if run_id and self.current_slug:
             os.startfile(self.app.runs.run_dir(self.current_slug, run_id))
+
+    def open_project_history(self) -> None:
+        if not self.current_slug:
+            messagebox.showwarning("Реестр объекта", "Сначала выберите объект", parent=self)
+            return
+        try:
+            self.app.runs.refresh_project_history(self.current_slug)
+            os.startfile(self.app.projects.project_dir(self.current_slug) / "ИСТОРИЯ_ОЦЕНОК.json")
+        except Exception as exc:
+            messagebox.showerror("Реестр объекта", str(exc), parent=self)
 
     def refresh_norm_status(self) -> None:
         status = self.app.norms.status()

@@ -62,23 +62,31 @@ class BarrierServiceTests(unittest.TestCase):
         self.assertTrue(result['ok'],result)
         self.assertEqual(hashlib.sha256(self.source.read_bytes()).hexdigest(),sha)
         loaded=self.app.runs.load('test',self.run)
-        self.assertEqual(loaded['run']['status'],'completed')
+        self.assertEqual(loaded['run']['status'],'geometry_verified')
+        self.assertFalse(loaded['registry']['dwg_actions']['work_completed'])
         self.assertTrue(loaded['registry']['barrier_assessment']['verification']['ok'])
         with self.assertRaises(ValueError):self.flow.build_copy_from_ui('test',self.run)
         with self.assertRaises(ValueError):self.flow.prepare('test',self.run,self.plan)
-        self.app.runs.record_result_dwg('test', self.run, result['result_dwg'],
-            source_document_contains_results=False, copy_did_not_change_open_source_identity=True)
+        with self.assertRaisesRegex(ValueError, 'контроль замечаний'):
+            self.app.runs.record_result_dwg('test', self.run, result['result_dwg'],
+                source_document_contains_results=False, copy_did_not_change_open_source_identity=True)
         checks={"scope_complete":True,"sources_verified":True,"mode_rules_verified":True,
             "geometry_verified":True,"object_properties_verified":True,"visual_review_complete":True,
             "source_dwg_unchanged":True,"result_saved_and_reopened":True,"registry_complete":True}
-        self.app.runs.record_quality_control('test',self.run,{"checks":checks,
-            "created_or_changed_entity_ids":[],
-            "unresolved":[]})
+        with self.assertRaisesRegex(ValueError, 'контроль замечаний'):
+            self.app.runs.record_quality_control('test',self.run,{"checks":checks,
+                "created_or_changed_entity_ids":[], "unresolved":[]})
         # An offline geometry fixture does not perform the independent normative
         # scan or populate the itemized completion registers. Generic QC flags
         # must not let it pass as a fully reviewed fire-barrier scheme.
+        # Even a manually asserted completion flag cannot bypass either gate.
+        registry_path = self.app.runs.run_dir('test', self.run) / 'РЕЕСТР_ПРОВЕРКИ.json'
+        registry = read_json(registry_path)
+        registry['dwg_actions']['work_completed'] = True
+        write_json(registry_path, registry)
         validation = self.app.runs.validate('test',self.run,True)
         self.assertFalse(validation['ok'])
+        self.assertTrue(any('контроль замечаний' in error for error in validation['errors']))
         self.assertTrue(any('Не закрыт реестр' in error for error in validation['errors']))
         self.assertTrue(any('самостоятельный нормативный обход' in error for error in validation['errors']))
         # An unrelated new line must invalidate a previously verified result.

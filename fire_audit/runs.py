@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .io_utils import read_json, utc_now, write_json, atomic_write_text
 from .knowledge import KnowledgeBase
 from .paths import AppPaths
-from .projects import ProjectStore
+from .projects import ProjectStore, height_for_task
 from .barrier_inputs import fire_pump_rooms_markdown, additional_inputs_markdown
 from .validation import validate_final_numbering, validate_registry
 from .barriers import (MODE as BARRIER_MODE, LAYER as BARRIER_LAYER, CATEGORY_LAYER,
                        preparation_errors, barrier_completion_errors)
+from .barrier_remarks import new_source_remarks
+from . import barrier_remarks_service
+from .cad_bridge import AutoCADBridge
+from .continuity import (CONTEXT_KINDS, HISTORY_NAME, PLAN_CHANGE_STATUSES, PRIOR_SNAPSHOT_NAME,
+                         comparison_baseline, file_stamp, passport_changes, project_history as build_project_history,
+                         work_kind, write_project_history)
 
 
 MODE_LABELS = {
@@ -34,6 +40,7 @@ MODE_LABELS = {
 TASK_VARIANTS = {
     "full_execution": "Полная проверка с AutoCAD",
     "analysis_word": "Анализ и задание в Word",
+    "object_norms": "Нормы для объекта",
 }
 DEFAULT_TASK_VARIANT = "full_execution"
 
@@ -47,6 +54,7 @@ WORD_QUALITY_CHECKS = {
     "conclusions_traceable", "word_structure_complete", "visual_review_complete",
     "source_dwg_unchanged", "registry_complete",
 }
+OBJECT_NORMS_REPORT = "НОРМЫ_ДЛЯ_ОБЪЕКТА.docx"
 
 
 PENDING_INSTRUCTION_MODES = {
@@ -60,7 +68,8 @@ PENDING_INSTRUCTION_MODES = {
 
 
 RESULT_DWG_STEPS = [
-    "До первой изменяющей операции создать рядом с исходным DWG отдельную копию результата с уникальным именем, содержащим вид работы и run_id, и сделать активной именно её.",
+    "Одно поручение — одна копия результата DWG. До первой изменяющей операции проверить реестр: при продолжении использовать уже закреплённый полный путь; только при отсутствии копии один раз создать рядом с исходным DWG отдельную копию результата с именем, содержащим вид работы и run_id первого запуска, и сделать активной именно её.",
+    "Промежуточные и окончательные изменения сохранять в тот же DWG без нового SaveAs. Новый запуск, обновление правил или данных и повторная проверка не требуют нового DWG. Дополнительные диагностические и финальные копии без разрешения пользователя не создавать.",
     "Выполнить все изменения напрямую в копии результата через AUTOM8LABS; исходный DWG на диске и его проектная геометрия должны остаться без изменений.",
     "Перечитать и визуально проверить новый DWG после сохранения; записать в реестр оба полных пути, AutoCAD-id созданных объектов, проверки свойств и отсутствие перезаписи исходника.",
 ]
@@ -73,7 +82,7 @@ MODE_STEPS = {
         "Найти образец и определить стиль, направление, начальную точку и оформление лучей.",
         "Проверить каждый объект этапизации по планам, инструкции и нормам на дату ГПЗУ, не перемещая его.",
         "Завершить индивидуальный анализ и повторную проверку текущего элемента до перехода к следующему.",
-        "Неактуальные объекты не удалять; рядом дать зелёное объяснение причины отказа.",
+        "Неактуальные замечания и запросы, включая отдельные требования внутри рамки, при разрешённой работе с DWG пометить внешним жёлтым цветом ACI 2 с проверкой возврата ByLayer; не удалять их, причину невыдачи записать в реестр без комментария к каждой проверке на плане.",
         "Добавить отсутствующие актуальные элементы по инструкции; новый текст выделить зелёным.",
         "Создать одно пояснение для объекта на слое экспертиза пояснения.",
         "Проверить одну существующую рамку требований у первого этажа и не перемещать её.",
@@ -103,9 +112,10 @@ MODE_STEPS = {
     ],
     "article89": [
         "Закрепить правильный открытый DWG и подтвердить его имя.",
+        "Прочитать подтверждённые положения паспорта и ответы заказчика; их объектный статус имеет приоритет над типовыми допущениями общих инструкций.",
         "Определить помещения по основной проектной геометрии, не используя экспертиза* как доказательство.",
         "Определить реальные двери, открытые проёмы, лестничные клетки, наружные выходы и ворота.",
-        "Назначить фактические типы R, C, V, T и E.",
+        "Назначить фактические типы R, C, V, T и E с учётом принятого в паспорте эвакуационного статуса лестниц.",
         "Построить граф связей и найти все реальные пути для каждого обычного помещения.",
         "Нормализовать T и повторные C, затем проверить допустимые последовательности.",
         "Отдельно проверить конечный выход через ворота.",
@@ -116,9 +126,14 @@ MODE_STEPS = {
     ],
     "actualization_protocol": [
         "Закрепить выбранный объект и правильный открытый DWG, не изменяя чертёж.",
-        "Загрузить отдельную инструкцию режима «Актуализация».",
-        "Если инструкция ещё не заполнена пользователем, остановить работу: не выполнять анализ, не создавать графику и не изменять AutoCAD.",
-        "После получения инструкции выполнять только утверждённую последовательность этого режима и вести отдельный реестр запуска.",
+        "Прочитать актуальный паспорт, датированную историю изменений объекта и инструкцию актуализации; применять совместимые правила оценки соответствия, обмеров, оформления, поиска и статьи 89 с приоритетом инструкции актуализации.",
+        "До изменений закрепить единственную копию результата: при продолжении использовать существующую, при отсутствии создать один раз по общим правилам сохранения.",
+        "Найти все жёлтые облака в слое «экспертиза изменения», обозначающие места изменений планов. В каждом облаке сопоставить прежнюю и новую проектную графику; слой «экспертиза сравнение» при необходимости использовать для сопоставления. Отдельно учесть датированные изменения вводных, ответы заказчика и СТУ. Составить матрицу: облако или изменение вводных → связанные замечания, маршруты и требования → граница влияния. Рамку «Требования пожарной безопасности» исключить из перепроверки.",
+        "Проверить фактическое устранение связанных с изменениями целей по новой проектной геометрии и проследить последствия за границей облаков. Неизменённые места вне зоны влияния сохранить с прежним статусом и доказательством отсутствия влияния.",
+        "Выполнить единую оценку изменённых мест и всех последствий по применимым правилам оценки соответствия АР; перед выдачей исключить совпадения с уже выданными местами и требованиями.",
+        "Новые места подходящего замечания дополнить лучами и доказательной графикой в слое экспертиза; в пояснении пожарного консультанта указать добавленные места. Для нового требования или другого этажа копировать полную утверждённую группу без перенумерации прежних замечаний.",
+        "Подтверждённо устранённые лучи и связанную графику перевести в зелёный слой «экспертиза устранено»; всю группу переводить только после устранения всех относящихся нарушений.",
+        "Сохранить исходные номера, тексты и историю; записать индивидуальные доказательства, открытые вопросы и повторно считанные свойства в реестр.",
     ],
     "ar_assessment_transfer": [
         "Закрепить выбранный объект и правильный открытый DWG, не изменяя чертёж.",
@@ -169,6 +184,7 @@ class RunStore:
         self.paths = paths
         self.projects = projects
         self.knowledge = knowledge
+        self.source_remarks_bridge_factory = lambda: AutoCADBridge(timeout=120)
 
     def run_dir(self, slug: str, run_id: str) -> Path:
         base = self.projects.project_dir(slug) / "runs"
@@ -177,15 +193,51 @@ class RunStore:
             raise ValueError("Недопустимый идентификатор запуска")
         return path
 
-    def create(self, slug: str, mode: str, task_variant: str = DEFAULT_TASK_VARIANT) -> dict[str, Any]:
+    def project_history(self, slug: str) -> dict[str, Any]:
+        return build_project_history(self.projects.project_dir(slug))
+
+    def refresh_project_history(self, slug: str) -> dict[str, Any]:
+        return write_project_history(self.projects.project_dir(slug))
+
+    def comparison_baseline(self, slug: str, mode: str, task_variant: str = DEFAULT_TASK_VARIANT) -> dict[str, Any] | None:
+        return comparison_baseline(self.project_history(slug), work_kind(mode, task_variant))
+
+    def create(self, slug: str, mode: str, task_variant: str = DEFAULT_TASK_VARIANT,
+               *, plan_change_status: str | None = None, plan_change_note: str = "") -> dict[str, Any]:
         if mode not in MODE_LABELS:
             raise ValueError(f"Неизвестный режим: {mode}")
         if task_variant not in TASK_VARIANTS:
             raise ValueError(f"Неизвестный вид задания: {task_variant}")
+        if task_variant == "object_norms" and mode != "compliance":
+            raise ValueError("«Нормы для объекта» — отдельное задание по всему выбранному объекту; используйте режим compliance")
         project = self.projects.load(slug)
         errors, warnings = self.projects.validate(project, require_ready=True)
         if errors:
             raise ValueError("; ".join(errors))
+
+        prior_history = self.project_history(slug)
+        kind = work_kind(mode, task_variant)
+        baseline = comparison_baseline(prior_history, kind)
+        prior_same_work = prior_history["by_work_kind"].get(kind, [])
+        if plan_change_status is not None and plan_change_status not in PLAN_CHANGE_STATUSES:
+            raise ValueError("Состояние планов: допустимы initial, same, new или unconfirmed")
+        if baseline is None:
+            if plan_change_status not in (None, "initial"):
+                raise ValueError("Для первого запуска нельзя указать повторное состояние планов")
+            effective_plan_status = "initial"
+        else:
+            if plan_change_status == "initial":
+                raise ValueError("Повторный запуск нельзя считать первым")
+            effective_plan_status = plan_change_status or "unconfirmed"
+        source_stamp = file_stamp(project.get("dwg", {}).get("path", ""))
+        previous_project = (read_json(Path(baseline["run_file"]), {}).get("project_snapshot", {})
+                            if baseline else {})
+        changed_passport = passport_changes(previous_project, project) if baseline else {"count": 0, "items": [], "truncated": False}
+        if baseline and not baseline.get("result_complete"):
+            warnings.append("Непосредственно предыдущая итерация этого вида работы не зарегистрирована как завершённая; не пропускайте её и проверьте выводы по фактическим файлам")
+        if (baseline and effective_plan_status == "same" and baseline.get("source_file_stamp", {}).get("exists")
+                and source_stamp.get("exists") and baseline["source_file_stamp"] != source_stamp):
+            warnings.append("Планы отмечены как прежние, но путь, размер или время изменения DWG отличаются; требуется сверка фактического содержимого")
 
         # Read and validate once: every artifact must describe this same revision.
         knowledge_snapshot = self.knowledge.snapshot_for_mode(mode)
@@ -200,39 +252,80 @@ class RunStore:
 
         instructions_pending = knowledge_snapshot.instructions_pending
         full_execution = task_variant == "full_execution"
-        word_report_name = "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
+        object_norms = task_variant == "object_norms"
+        source_selection_word = mode in {"compliance", "actualization_protocol"} and task_variant == "analysis_word"
+        cad_result = full_execution or source_selection_word
+        word_report_name = OBJECT_NORMS_REPORT if object_norms else "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
         run = {
             "schema_version": 1,
             "run_id": run_id,
             "project_slug": slug,
             "mode": mode,
-            "mode_label": MODE_LABELS[mode],
+            "mode_label": "Нормы для объекта" if object_norms else MODE_LABELS[mode],
             "task_variant": task_variant,
             "task_variant_label": TASK_VARIANTS[task_variant],
             "status": "planned",
-            "created_at": utc_now(),
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
             "knowledge_digest": knowledge_snapshot.digest,
             "knowledge_documents": [
                 {"name": doc.name, "path": str(doc.path), "sha256": doc.sha256}
                 for doc in knowledge_snapshot.documents
             ],
             "project_snapshot": copy.deepcopy(project),
+            "project_change_log_snapshot": copy.deepcopy(project.get("change_log", [])),
+            "source_file_stamp": source_stamp,
+            "passport_changes": changed_passport,
+            "plan_revision": {
+                "status": effective_plan_status,
+                "work_kind": kind,
+                "work_iteration": len(prior_same_work) + 1,
+                "comparison_run_id": baseline["run_id"] if baseline else "",
+                "previous_same_work_run_id": baseline["run_id"] if baseline else "",
+                "comparison_iteration": baseline.get("work_iteration", 0) if baseline else 0,
+                "user_note": str(plan_change_note or "").strip(),
+                "confirmed_by_user": effective_plan_status in {"same", "new"},
+                "file_stamp_is_only_change_hint": True,
+            },
+            "prior_runs_count": len(prior_history["runs"]),
+            "prior_same_work_runs_count": len(prior_same_work),
             "warnings": warnings,
             "semantic_blocks": [],
             "workflow": "assistant_direct_autom8labs" if full_execution else "assistant_analysis_word_report",
-            "steps": [*MODE_STEPS[mode], *(RESULT_DWG_STEPS if full_execution else [])],
+            "steps": ([
+                "Зафиксировать выбранный объект, дату ГПЗУ и все предоставленные заказчиком вводные; не переносить факты другого объекта.",
+                "Прочитать специальную инструкцию «Нормы для объекта» и регламент нормативного поиска полностью.",
+                "Проверить полный корпус документов, статус чтения и редакцию перечня Росстандарта № 2594 на дату ГПЗУ.",
+                "Составить карту тем и перебрать все СП и только те их пункты/части, которые включены в применимую редакцию перечня.",
+                "Для каждого кандидата прочитать весь нормативный контекст и проверить действие на здание, его части, этажи, помещения и конкретные условия.",
+                "Собрать только подтверждённо применимые требования; условные и неустановленные вынести отдельно с точными вопросами заказчику.",
+                "Составить матрицу прослеживаемости и итоговый Word-файл, повторно проверить охват и каждую ссылку.",
+            ] if object_norms else [*MODE_STEPS[mode],
+                                     *(["Для Word-задания отметить внешним зелёным цветом и пронумеровать 1, 2, 3, … только подтверждённо выдаваемые исходные группы замечаний слева от планов в отдельной копии DWG; при актуализации не помечать и не перенумеровывать уже выданные у планов группы; замечания этапизации исключить из этой последовательности; внутренние красные и фиолетовые цвета сохранить."]
+                                       if source_selection_word else []),
+                                     *(RESULT_DWG_STEPS if full_execution else [])]),
             "hard_constraints": {
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
                 "save_dwg": False,
                 "overwrite_source_dwg": False,
-                "save_separate_result_dwg": full_execution,
+                "save_separate_result_dwg": cad_result,
                 "result_dwg_same_folder_as_source": True,
                 "result_dwg_filename_pattern": "<source_stem>__<mode>__<run_id>.dwg",
+                "result_dwg_filename_pattern_scope": "initial_creation_only",
+                "result_dwg_one_copy_per_assignment": True,
+                "reuse_pinned_result_dwg_on_continuation": True,
+                "new_run_requires_new_dwg": False,
                 "results_remain_in_open_source_document": False,
-                "create_result_copy_before_writes": full_execution,
-                "assistant_executes_autocad_directly": full_execution,
+                "create_result_copy_before_writes": cad_result,
+                "assistant_executes_autocad_directly": cad_result,
                 "assistant_reads_autocad_directly": True,
-                "assistant_modifies_autocad": full_execution,
+                "assistant_modifies_autocad": cad_result,
+                "source_remark_selection_word_only": source_selection_word,
+                "allowed_word_autocad_writes": ("external_entity_color_and_selected_source_remark_number_only"
+                                                if source_selection_word else "none"),
+                "source_remark_selection_color_aci": 3 if source_selection_word else None,
+                "source_remark_selection_numbering": "consecutive_selected_source_groups_excluding_stage" if source_selection_word else "none",
+                "source_remark_inline_colors_must_be_preserved": source_selection_word,
+                "source_remark_bylayer_restore_must_be_verified": source_selection_word,
                 "word_report_required": not full_execution,
                 "word_report_filename": word_report_name if not full_execution else "",
                 "word_report_human_readable": not full_execution,
@@ -241,14 +334,29 @@ class RunStore:
                 "delete_objects": False,
                 "delete_expertise_layers": False,
                 "draw_only_confirmed_violations": True,
-                "explain_every_non_issued_source_in_green": True,
-                "separate_findings_per_floor": True,
+                "unconfirmed_opening_infills_are_not_fire_rated": True,
+                "opening_fire_rating_requires_object_specific_documentary_evidence": True,
+                "confirmed_passport_positions_control_object_facts": True,
+                "object_specific_user_positions_override_generic_defaults": True,
+                "article89_passport_stair_evacuation_status_controls_type_e": True,
+                "article89_excluded_initial_room_purposes": ["душевая", "ванная", "туалет", "санузел"],
+                "article89_exclusion_is_user_scope_not_normative_exemption": True,
+                "article89_exclusion_does_not_apply_to_other_requirements": True,
+                "article89_excluded_rooms_preserve_transit_topology": True,
+                "explain_every_non_issued_source_in_green": False,
+                "routine_review_comments_on_drawing_forbidden": True,
+                "individual_review_evidence_in_registry_required": True,
+                "full_scope_tracking_required": True,
+                "continue_independent_work_when_local_data_missing": True,
+                "intermediate_save_is_not_completion": True,
+                "verify_active_document_before_and_after_each_write": True,
+                "separate_findings_per_floor": not object_norms,
                 "abk_insertions_embedded_parts_and_annexes_are_public_parts": True,
                 "abk_functional_fire_hazard_class": "Ф4.3",
                 "determine_room_host_part_before_norm_selection": True,
                 "one_frame_first_floor_stage": mode == "stage",
                 "stage_right_elements_require_rays": mode == "stage",
-                "issued_compliance_findings_require_rays": mode == "compliance",
+                "issued_compliance_findings_require_rays": mode == "compliance" and not object_norms,
                 "individual_normative_analysis_required": True,
                 "full_source_reading_required": True,
                 "all_referenced_letter_parts_required": True,
@@ -258,12 +366,25 @@ class RunStore:
                 "violation_graphics_layer": "экспертиза",
                 "purple_explanations_layer": "экспертиза пояснения",
                 "all_created_objects_require_by_layer": True,
-                "compliance_findings_copy_only_from_approved_groups": mode == "compliance",
-                "manual_remark_mtext_creation_forbidden": mode == "compliance",
-                "left_explanation_must_be_detected_and_copied": mode == "compliance",
-                "repeated_floor_uses_previous_actualized_group": mode == "compliance",
+                "compliance_findings_copy_only_from_approved_groups": mode == "compliance" and not object_norms,
+                "manual_remark_mtext_creation_forbidden": mode == "compliance" and not object_norms,
+                "left_explanation_must_be_detected_and_copied": mode == "compliance" and not object_norms,
+                "repeated_floor_uses_previous_actualized_group": mode == "compliance" and not object_norms,
+                "object_norms_only_confirmed_applicable_clauses": object_norms,
+                "object_norms_check_rosstandart_list_clause_parts": object_norms,
                 "workflow_instructions_ready": not instructions_pending,
-                "autocad_actions_enabled": full_execution and not instructions_pending,
+                "autocad_actions_enabled": cad_result and not instructions_pending,
+                **({
+                    "actualization_existing_findings_only": False,
+                    "actualization_unified_review": True,
+                    "actualization_deduplicate_existing_targets": True,
+                    "actualization_new_targets_require_consultant_comment": True,
+                    "actualization_resolved_layer": "экспертиза устранено",
+                    "actualization_resolved_layer_color": 3,
+                    "actualization_all_targets_required_to_resolve_group": True,
+                    "actualization_fire_safety_frame_excluded": True,
+                    "actualization_preserve_issued_numbering": True,
+                } if mode == "actualization_protocol" else {}),
             },
         }
         registry = {
@@ -272,6 +393,7 @@ class RunStore:
             "project_slug": slug,
             "mode": mode,
             "findings": [],
+            "continuity": {"status": "not_recorded", "items": [], "updated_at": ""},
             "final_numbering": {"status": "not_started", "items": []},
             "graphics_layer_check": {
                 "all_violation_graphics_on_expertise_layer": False,
@@ -292,7 +414,7 @@ class RunStore:
                 "source_save_requested": False,
                 "source_overwritten": False,
                 "delete_requested": False,
-                "result_copy_required": full_execution,
+                "result_copy_required": cad_result,
                 "result_copy_created": False,
                 "result_copy_path": "",
                 "source_path": str(project.get("dwg", {}).get("path", "")),
@@ -314,6 +436,10 @@ class RunStore:
                 "recorded_at": "",
             },
         }
+        if mode == "actualization_protocol":
+            registry["actualization_scope"] = {"unified_review_required": True,
+                                               "issued_main_text_ids": [], "required_review_keys": []}
+            registry["new_plan_review"] = {"items": []}
         if mode == BARRIER_MODE:
             profile = next((json.loads(doc.text) for doc in knowledge_snapshot.documents
                             if doc.name == "barrier_drawing_profile.json"), {})
@@ -323,7 +449,7 @@ class RunStore:
                 "draw_only_confirmed_violations": False,
                 "explain_every_non_issued_source_in_green": False,
                 "draw_only_evidenced_requirements": True,
-                "draw_stair_enclosures_as_separate_boundaries": False,
+                "draw_stair_enclosures_as_separate_boundaries": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is True,
                 "review_lift_shafts_halls_and_hoist_shafts": True,
                 "lift_enclosures_basis": "123-ФЗ, статья 88, части 15 и 16; учитывать условия и варианты защиты",
                 "sanitary_rooms_treated_as_public_for_barriers": True,
@@ -334,9 +460,19 @@ class RunStore:
                 "large_storage_volume_adjacencies_must_be_reviewed": True,
                 "same_category_production_rooms_need_no_shared_barrier_only_under_sp4_6_1_47": True,
                 "vent_chambers_full_internal_boundary_ei45_including_corridors": True,
+                "vent_chamber_served_and_protected_fire_compartments_must_be_identified": True,
+                "vent_chamber_outside_served_or_protected_compartment_enclosure_ei150": True,
+                "vent_chamber_outside_served_or_protected_compartment_doors_type1": True,
+                "sp7_6_8_6_9_cross_compartment_conditions_must_be_checked": True,
+                "vent_chamber_cross_compartment_basis": "СП 7.13130.2013, пп. 6.8, 6.9, 8.2; ограждения не менее EI 150, двери 1-го типа, ограждения не ниже разделяющей противопожарной преграды",
                 "one_barrier_per_shared_boundary": True,
                 "duplicate_overlapping_barriers_forbidden": True,
                 "barriers_must_follow_actual_wall_geometry": True,
+                "sp2_5_3_6_checked_after_all_barriers_drawn": True,
+                "sp2_5_3_6_actual_dimensions_required_for_all_checked_piers": True,
+                "sp2_5_3_6_keep_all_measurements_in_final_dwg": True,
+                "sp2_5_3_6_measurement_layer": "экспертиза противопожарные преграды пояснения",
+                "sp2_5_3_6_rays_target_dimension_objects": True,
                 "escape_route_rule_selected_by_gpzu_date": True,
                 "sp2_5_2_7_all_functional_parts_after_2026_01_01": True,
                 "pre_2026_public_escape_routes_use_sp1_7_1_11": True,
@@ -349,10 +485,12 @@ class RunStore:
                 "specific_door_callout_must_not_start_from_explanation_graphics": True,
                 "grouped_specific_door_callout_requires_one_ray_per_door": True,
                 "shaft_opening_callouts_forbidden": True,
-                "exterior_and_stair_walls_only_with_explicit_explanation_requirement": True,
-                "stairwell_walls_excluded_on_both_sides": True,
-                "stairwell_wall_exception_requires_explanation_layer_remark": BARRIER_LAYER + " пояснения",
-                "stairwell_wall_exception_requires_explicit_fire_resistance": True,
+                "exterior_walls_only_with_explicit_explanation_requirement": True,
+                "stairwell_exception_compare_against_table21": True,
+                "stairwell_walls_excluded_on_both_sides": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is not True,
+                "stairwell_wall_exception_requires_higher_performance_than_table21": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is not True,
+                "stairwell_wall_exception_requires_explicit_fire_resistance": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is not True,
+                "internal_stairwell_walls_table21_required": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is True,
                 "tambour_escape_route_rule_only_at_escape_route_interface": True,
                 "corridor_cross_barrier_requires_independent_basis": True,
                 "callouts_above_related_floor_without_overlaps": True,
@@ -370,6 +508,16 @@ class RunStore:
                 "apply_confirmed_special_requirements_before_general_barrier_type": True,
                 "distinguish_rated_corridor_enclosures_from_fire_partitions": True,
                 "draw_customer_adopted_corridor_fire_partitions": True,
+                "corridor_existing_crosswalls_checked_before_new_division": True,
+                "corridor_type2_requires_door_between_corridor_sections": True,
+                "corridor_solid_walls_not_marked_ei15_for_subdivision": True,
+                "corridor_connectivity_must_respect_solid_walls": True,
+                "corridor_count_existing_higher_rated_cross_barriers": True,
+                "corridor_keep_higher_rating_without_ei15_duplicate": True,
+                "corridor_measure_each_separated_component_with_branches": True,
+                "corridor_customer_dimensions_linked_to_actual_boundaries": True,
+                "barrier_graphics_continuous_across_openings_and_junctions": True,
+                "same_category_storage_rooms_in_production_part_no_barrier_under_6_1_47": True,
                 "corridor_section_max_length_m": 60,
                 "corridor_division_partition_type": 2,
                 "corridor_division_basis": ["СП 1.13130.2020, п. 4.3.7", "СП 4.13130.2013, п. 6.1.45"],
@@ -383,6 +531,9 @@ class RunStore:
                 "all_repeated_legend_frames_must_match": True,
                 "unused_legend_rows_may_be_deleted_in_result_copy": True,
                 "barrier_completion_registers_required": True,
+                "barrier_source_remarks_inventory_required": True,
+                "barrier_source_remarks_decision_for_every_item_required": True,
+                "barrier_source_remarks_fresh_read_before_completion": True,
                 "independent_door_and_slab_normative_scan_required": True,
                 "callout_layout_readback_required": True,
                 "callout_rays_all_properties_by_layer": True,
@@ -402,6 +553,7 @@ class RunStore:
             })
             registry["barrier_assessment"] = {"rooms": copy.deepcopy(project.get(BARRIER_MODE, {}).get("rooms", [])),
                 "requirements": [], "created_entities": [], "unresolved": list(missing), "status": "preparation",
+                "source_remarks": new_source_remarks(),
                 "completion_registers": {
                     "large_volume_boundaries": {"status": "not_started", "items": []},
                     "fire_openings": {"status": "not_started", "items": []},
@@ -414,12 +566,14 @@ class RunStore:
                 }}
         write_json(folder / "run.json", run)
         write_json(folder / "РЕЕСТР_ПРОВЕРКИ.json", registry)
+        write_json(folder / PRIOR_SNAPSHOT_NAME, prior_history)
         atomic_write_text(folder / "ПРАВИЛА_ЗАПУСКА.md", knowledge_snapshot.context)
         atomic_write_text(folder / "КОНТРОЛЬ_КАЧЕСТВА.md", self._quality_markdown(run))
         # Keep the legacy state readable for old integrations. New tasks and the UI do not use it.
         if getattr(self, "control", None):
             self.control.initialize(slug, run_id)
         atomic_write_text(folder / "ЗАДАНИЕ_ДЛЯ_ЧАТА.md", self._task_markdown(run))
+        write_project_history(self.projects.project_dir(slug))
         return {
             "run": run,
             "folder": str(folder),
@@ -433,9 +587,10 @@ class RunStore:
         run = read_json(folder / "run.json")
         if run is None:
             raise FileNotFoundError(f"Запуск не найден: {run_id}")
-        run["mode_label"] = MODE_LABELS.get(run.get("mode"), run.get("mode_label", ""))
         run["task_variant"] = run.get("task_variant", DEFAULT_TASK_VARIANT)
         run["task_variant_label"] = TASK_VARIANTS.get(run["task_variant"], run.get("task_variant_label", ""))
+        run["mode_label"] = ("Нормы для объекта" if run["task_variant"] == "object_norms" else
+                             MODE_LABELS.get(run.get("mode"), run.get("mode_label", "")))
         registry = read_json(folder / "РЕЕСТР_ПРОВЕРКИ.json", {})
         task_file = folder / "ЗАДАНИЕ_ДЛЯ_ЧАТА.md"
         quality_file = folder / "КОНТРОЛЬ_КАЧЕСТВА.md"
@@ -472,13 +627,33 @@ class RunStore:
             warnings.append("Сохранённая версия правил отсутствует или не соответствует запуску. Создайте новый запуск.")
         status = ("Задание соответствует текущим правилам и паспорту. Это не подтверждение завершённости проверки."
                   if not warnings else "ЗАДАНИЕ ТРЕБУЕТ ОБНОВЛЕНИЯ:\n" + "\n".join("- " + w for w in warnings))
-        if run["task_variant"] == "analysis_word":
+        if run["task_variant"] == "object_norms":
             workflow = (
-                "Выполни полный сбор данных и нормативный анализ, но не изменяй AutoCAD и исходные материалы. "
-                "AUTOM8LABS используй только для чтения чертежа. Итогом должен быть понятный человеку Word-файл "
-                "с точными местами, требуемыми действиями, текстами замечаний и нормативными основаниями. "
-                "Создай DOCX, отрендери все его страницы и визуально проверь читаемость."
+                "Собери применимые к выбранному объекту требования СП по редакции на дату ГПЗУ: проверь "
+                "перечень Росстандарта № 2594 до конкретного пункта/части, область действия и условия. "
+                "Итог — проверенный Word-файл. AutoCAD используй только для чтения нужных фактов; "
+                "исходные материалы не изменяй. Не подменяй подтверждённую применимость предположением."
             )
+        elif run["task_variant"] == "analysis_word":
+            if run["hard_constraints"].get("source_remark_selection_word_only"):
+                workflow = (
+                    "Выполни полный нормативный анализ и укажи в Word фактическое нарушение и точные пункты нормы. "
+                    "В отдельной копии DWG через AUTOM8LABS разрешено только временно пометить внешним зелёным "
+                    "цветом и последовательно пронумеровать подтверждённо выдаваемые исходные замечания слева "
+                    "от планов; замечания этапизации в нумерацию не включай, внутренние красные и фиолетовые "
+                    "цвета не изменяй. Сохрани и зарегистрируй копию, исходный DWG не меняй. "
+                    + ("При актуализации в Word отдельно перечисли прежние выданные замечания с их неизменными "
+                       "номерами и новые места, добавляемые к каждому из них. "
+                       if run.get("mode") == "actualization_protocol" else "") +
+                    "Остальную графическую работу опиши в Word, но не выполняй. Отрендери и проверь DOCX."
+                )
+            else:
+                workflow = (
+                    "Выполни полный сбор данных и нормативный анализ, но не изменяй AutoCAD и исходные материалы. "
+                    "AUTOM8LABS используй только для чтения чертежа. Итогом должен быть понятный человеку Word-файл "
+                    "с точными местами, требуемыми действиями, текстами замечаний и нормативными основаниями. "
+                    "Создай DOCX, отрендери все его страницы и визуально проверь читаемость."
+                )
         else:
             workflow = (
                 "Выполни всю проверку и графическую работу самостоятельно. Исследуй и изменяй отдельную копию результата "
@@ -495,6 +670,8 @@ class RunStore:
             f"Полное задание: {task_file}\nПравила запуска: {rules_file}\n"
             f"Паспорт и состояние запуска: {folder / 'run.json'}\n"
             f"Реестр и выполненная работа: {folder / 'РЕЕСТР_ПРОВЕРКИ.json'}\n"
+            f"История проверок объекта: {self.projects.project_dir(slug) / HISTORY_NAME}\n"
+            f"Снимок прежних запусков: {(folder / PRIOR_SNAPSHOT_NAME) if (folder / PRIOR_SNAPSHOT_NAME).is_file() else 'не создавался для этого старого запуска'}\n"
             f"Текущий паспорт объекта: {self.projects.project_dir(slug) / 'project.json'}\n"
             f"Версия правил задания: {rules_digest}\nТекущая версия правил: {current_digest}\n\n"
             f"{status}\n\n"
@@ -514,22 +691,23 @@ class RunStore:
                 "task_variant": run["task_variant"]}
 
     def list_runs(self, slug: str) -> list[dict[str, Any]]:
-        base = self.projects.project_dir(slug) / "runs"
-        if not base.exists():
-            return []
         result: list[dict[str, Any]] = []
-        for path in sorted(base.glob("*/run.json"), reverse=True):
-            run = read_json(path, {})
+        for entry in self.project_history(slug)["runs"]:
+            mode = entry["mode"]
+            task_variant = entry["task_variant"]
             result.append(
                 {
-                    "run_id": run.get("run_id", path.parent.name),
-                    "mode": run.get("mode", ""),
-                    "mode_label": MODE_LABELS.get(run.get("mode"), run.get("mode_label", run.get("mode", ""))),
-                    "task_variant": run.get("task_variant", DEFAULT_TASK_VARIANT),
-                    "task_variant_label": TASK_VARIANTS.get(run.get("task_variant", DEFAULT_TASK_VARIANT), ""),
-                    "status": run.get("status", ""),
-                    "created_at": run.get("created_at", ""),
-                    "folder": str(path.parent),
+                    "run_id": entry["run_id"],
+                    "mode": mode,
+                    "mode_label": "Нормы для объекта" if task_variant == "object_norms" else MODE_LABELS.get(mode, mode),
+                    "work_kind": entry["work_kind"],
+                    "work_iteration": entry["work_iteration"],
+                    "task_variant": task_variant,
+                    "task_variant_label": TASK_VARIANTS.get(task_variant, ""),
+                    "plan_change_status": entry["plan_revision"].get("status", "unknown"),
+                    "status": entry["status"],
+                    "created_at": entry["created_at"],
+                    "folder": str(Path(entry["run_file"]).parent),
                 }
             )
         return result
@@ -601,9 +779,44 @@ class RunStore:
         write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", registry)
         return {"id": finding_id, "count": len(findings)}
 
+    def record_continuity(self, slug: str, run_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Upsert evidence-linked project observations in one run, never in older runs."""
+        if not isinstance(items, list) or not items:
+            raise ValueError("items должен быть непустым списком наблюдений")
+        loaded = self.load(slug, run_id)
+        record = loaded["registry"].setdefault("continuity", {"status": "not_recorded", "items": [], "updated_at": ""})
+        by_id = {str(item.get("id")): copy.deepcopy(item) for item in record.get("items", []) if isinstance(item, dict)}
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("Каждое наблюдение должно быть объектом")
+            item_id = str(item.get("id", "")).strip()
+            kind = str(item.get("kind", "")).strip()
+            description = str(item.get("description", "")).strip()
+            source = item.get("source", "")
+            if not item_id or kind not in CONTEXT_KINDS or not description:
+                raise ValueError("Нужны id, допустимый kind и описание каждого наблюдения")
+            if kind != "question" and not source:
+                raise ValueError(f"Для наблюдения {item_id} нужен источник: план, ответ заказчика или реестр")
+            normalized = copy.deepcopy(item)
+            normalized.update({"id": item_id, "kind": kind, "description": description, "updated_at": utc_now()})
+            by_id[item_id] = normalized
+        record.update({"status": "recorded", "items": list(by_id.values()), "updated_at": utc_now()})
+        write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
+        write_project_history(self.projects.project_dir(slug))
+        return {"run_id": run_id, "count": len(record["items"]), "history_file": str(self.projects.project_dir(slug) / HISTORY_NAME)}
+
+    def capture_barrier_source_remarks(self, slug: str, run_id: str) -> dict[str, Any]:
+        return barrier_remarks_service.capture(self, slug, run_id)
+
+    def record_barrier_source_decisions(self, slug: str, run_id: str, decisions: list[dict[str, Any]],
+                                       none_found_reason: str | None = None,
+                                       delete_decision_ids: list[str] | None = None) -> dict[str, Any]:
+        return barrier_remarks_service.record_decisions(
+            self, slug, run_id, decisions, none_found_reason, delete_decision_ids)
+
     def record_quality_control(self, slug: str, run_id: str, quality: dict[str, Any]) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
-        expected = (WORD_QUALITY_CHECKS if loaded["run"].get("task_variant") == "analysis_word"
+        expected = (WORD_QUALITY_CHECKS if loaded["run"].get("task_variant") in {"analysis_word", "object_norms"}
                     else FULL_QUALITY_CHECKS)
         checks = quality.get("checks", {})
         if not isinstance(checks, dict) or set(checks) != expected:
@@ -617,6 +830,9 @@ class RunStore:
         if not isinstance(entity_ids, list) or not all(isinstance(value, str) and value.strip() for value in entity_ids):
             raise ValueError("quality.created_or_changed_entity_ids должен быть списком AutoCAD-id")
         complete = all(checks.values()) and not unresolved
+        if complete:
+            barrier_remarks_service.require_complete(self, slug, run_id)
+            loaded = self.load(slug, run_id)
         record = {
             "status": "complete" if complete else "needs_attention",
             "checks": copy.deepcopy(checks),
@@ -627,6 +843,7 @@ class RunStore:
         }
         loaded["registry"]["quality_control"] = record
         write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
+        write_project_history(self.projects.project_dir(slug))
         return copy.deepcopy(record)
 
     def record_word_report(
@@ -641,11 +858,11 @@ class RunStore:
         unresolved: list[str] | None = None,
     ) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
-        if loaded["run"].get("task_variant") != "analysis_word":
-            raise ValueError("Word-отчёт регистрируется только для задания «Анализ и задание в Word»")
+        if loaded["run"].get("task_variant") not in {"analysis_word", "object_norms"}:
+            raise ValueError("Word-отчёт регистрируется только для задания с итоговым DOCX")
         report = Path(str(report_path).strip()).resolve()
         folder = Path(loaded["folder"]).resolve()
-        expected = folder / "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
+        expected = folder / loaded["run"]["hard_constraints"]["word_report_filename"]
         if report != expected:
             raise ValueError(f"Итоговый Word-файл должен быть сохранён по пути: {expected}")
         if report.suffix.lower() != ".docx" or not report.is_file() or report.stat().st_size == 0:
@@ -659,6 +876,9 @@ class RunStore:
         questions = unresolved or []
         if not isinstance(questions, list) or not all(isinstance(value, str) for value in questions):
             raise ValueError("unresolved должен быть списком конкретных нерешённых вопросов")
+        if not questions:
+            barrier_remarks_service.require_complete(self, slug, run_id)
+            loaded = self.load(slug, run_id)
         record = {
             "required": True,
             "status": "complete" if not questions else "needs_attention",
@@ -672,6 +892,7 @@ class RunStore:
         }
         loaded["registry"]["word_report"] = record
         write_json(folder / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
+        write_project_history(self.projects.project_dir(slug))
         return copy.deepcopy(record)
 
     def record_result_dwg(
@@ -685,8 +906,8 @@ class RunStore:
     ) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
         run = loaded["run"]
-        if run.get("task_variant") == "analysis_word":
-            raise ValueError("В задании «Анализ и задание в Word» итоговый DWG не создаётся")
+        if not run.get("hard_constraints", {}).get("save_separate_result_dwg"):
+            raise ValueError("В задании с итоговым Word-файлом итоговый DWG не создаётся")
         registry = loaded["registry"]
         source_text = str(run.get("project_snapshot", {}).get("dwg", {}).get("path", "")).strip()
         result_text = str(result_path).strip()
@@ -706,8 +927,16 @@ class RunStore:
         if not result.is_file():
             raise ValueError("Новый DWG с результатом не найден по указанному пути")
 
+        actions = registry.setdefault("dwg_actions", {})
+        pinned_result = str(actions.get("result_copy_path", "")).strip()
+        reuse_pinned_copy = (
+            actions.get("result_copy_created") is True
+            and bool(pinned_result)
+            and Path(pinned_result).resolve() == result
+            and Path(str(actions.get("source_path", ""))).resolve() == source
+        )
         expected_prefix = f"{source.stem}__{run.get('mode', '')}__{run_id}"
-        if not result.stem.startswith(expected_prefix):
+        if not reuse_pinned_copy and not result.stem.startswith(expected_prefix):
             raise ValueError(
                 "Имя нового DWG должно начинаться с "
                 f"{expected_prefix} и при необходимости иметь числовой суффикс"
@@ -715,8 +944,16 @@ class RunStore:
         if source_document_contains_results:
             raise ValueError("Исходный документ должен оставаться без результатов нового запуска; работайте в отдельной копии")
         if not copy_did_not_change_open_source_identity:
-            raise ValueError("Не подтверждена сохранность пути и идентичности исходного открытого документа")
+            preservation = actions.get("source_preservation", {})
+            before = str(preservation.get("sha256_before_edits", ""))
+            after = str(preservation.get("sha256_after_edits", ""))
+            if (len(before) != 64 or before.lower() != after.lower()
+                    or preservation.get("source_last_write_unchanged") is not True):
+                raise ValueError("Не подтверждена сохранность исходного DWG после смены активного имени")
 
+        barrier_remarks_service.require_complete(self, slug, run_id, str(result))
+        loaded = self.load(slug, run_id)
+        registry = loaded["registry"]
         actions = registry.setdefault("dwg_actions", {})
         actions.update(
             {
@@ -730,12 +967,13 @@ class RunStore:
                 "source_path": str(source),
                 "source_document_contains_results": False,
                 "source_document_kept_unchanged": True,
-                "copy_did_not_change_open_source_identity": True,
+                "copy_did_not_change_open_source_identity": copy_did_not_change_open_source_identity,
                 "work_completed": True,
                 "recorded_at": utc_now(),
             }
         )
         write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", registry)
+        write_project_history(self.projects.project_dir(slug))
         return copy.deepcopy(actions)
 
     def validate(self, slug: str, run_id: str, for_application: bool = False) -> dict[str, Any]:
@@ -746,7 +984,18 @@ class RunStore:
 
     def _validate(self, slug: str, run_id: str, for_application: bool = False) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
-        analysis_word = loaded["run"].get("task_variant") == "analysis_word"
+        source_errors = []
+        if barrier_remarks_service.applies(loaded["run"]):
+            if for_application:
+                try:
+                    barrier_remarks_service.require_complete(self, slug, run_id)
+                except Exception as exc:
+                    source_errors.append(str(exc))
+                loaded = self.load(slug, run_id)
+            else:
+                source_errors = barrier_remarks_service.stored_errors(
+                    loaded["run"], loaded["registry"], loaded["folder"])
+        analysis_word = loaded["run"].get("task_variant") in {"analysis_word", "object_norms"}
         if analysis_word:
             actions = loaded["registry"].get("dwg_actions", {})
             errors = []
@@ -754,11 +1003,16 @@ class RunStore:
                 errors.append("В режиме анализа исходный DWG не должен изменяться или сохраняться")
             if actions.get("delete_requested"):
                 errors.append("В режиме анализа запрещено удалять объекты AutoCAD")
+            if (for_application and loaded["run"].get("hard_constraints", {}).get("source_remark_selection_word_only")
+                    and (not actions.get("result_copy_created") or not actions.get("result_copy_path")
+                         or not actions.get("source_document_kept_unchanged"))):
+                errors.append("Для Word-анализа оценки АР или актуализации не зарегистрирована отдельная проверенная копия DWG с отбором исходных замечаний")
             result = {"ok": not errors, "errors": errors, "warnings": [],
                       "graphics_layer_check": loaded["registry"].get("graphics_layer_check", {})}
         else:
             result = validate_registry(loaded["registry"], for_application=for_application)
         if loaded["run"].get("mode") == BARRIER_MODE:
+            result["errors"].extend(source_errors)
             profile = read_json(self.paths.knowledge / "barrier_drawing_profile.json", {})
             result["errors"].extend(preparation_errors(loaded["run"]["project_snapshot"], profile))
             if (for_application and loaded["registry"].get("dwg_actions", {}).get("work_completed")):
@@ -779,7 +1033,9 @@ class RunStore:
             result.setdefault("errors", []).append(
                 f"Режим «{loaded['run']['mode_label']}»: алгоритм ещё не утверждён; применение результатов запрещено"
             )
-        if for_application and loaded["run"].get("mode") == "compliance" and not loaded["run"].get("semantic_blocks"):
+        if (for_application and loaded["run"].get("mode") == "compliance"
+                and loaded["run"].get("task_variant") != "object_norms"
+                and not loaded["run"].get("semantic_blocks")):
             result["ok"] = False
             result.setdefault("errors", []).append("Не зарегистрирован полный перечень исходных замечаний")
         if (for_application and loaded["run"].get("workflow") == "assistant_direct_autom8labs"
@@ -840,12 +1096,64 @@ class RunStore:
         return result
 
     def _quality_markdown(self, run: dict[str, Any]) -> str:
+        source_remarks_check = (
+            "- [ ] Через capture_barrier_source_remarks прочитан весь слой пояснений во всех пространствах; "
+            "через record_barrier_source_decisions записано решение по каждому замечанию, нет пропущенных целей, "
+            "необоснованных исключений и нерешённых вопросов; выполнено свежее чтение перед завершением.\n"
+            if barrier_remarks_service.applies(run) else ""
+        )
         category_layer_check = (
             "- [ ] Все категории помещений находятся точно в слое `экспертиза категории`; "
             "категорий в слое преград нет.\n"
             if run.get("mode") == BARRIER_MODE else ""
         )
+        issued_remarks_check = (
+            "- [ ] Сверены все исходные AutoCAD-id каждого слоя `экспертиза*`: тексты, номера, рамки, лучи, обмеры, облака и прочая графика сохранились и видимы; разрешённые смены слоя записаны.\n"
+            "- [ ] Сохранённая копия повторно открыта с диска; планы и вся прежняя экспертная графика видны, объединённый состав слоёв `экспертиза*` и формат DWG проверены.\n"
+            if run.get("mode") == "actualization_protocol" else ""
+        )
+        if run.get("task_variant") == "object_norms":
+            return f"""# Контроль качества: нормы для объекта
+
+Объект: {run['project_snapshot'].get('name', run['project_slug'])}  
+Запуск: `{run['run_id']}`  
+Хеш правил: `{run['knowledge_digest']}`
+
+- [ ] Проверены выбранный объект, его исходные данные и дата ГПЗУ; сведения других объектов не использованы.
+- [ ] Прочитаны прошлые реестры объекта, уточнено изменение планов и проверено влияние на прежние выводы.
+- [ ] Проверены доступность и полнота чтения нормативной базы, редакция перечня Росстандарта № 2594.
+- [ ] Составлена карта всех тем раздела 10 регламента; просмотрены все потенциально относящиеся СП, а не только пункты пользовательских замечаний.
+- [ ] Для каждого включённого требования сверено точное включение пункта/части/таблицы в перечень, дата редакции, область действия и фактическое условие применимости.
+- [ ] В основной матрице только подтверждённо применимые фрагменты; неопределённые и исключённые кандидаты отделены с вопросом или причиной.
+- [ ] Полный нормативный контекст, исключения, сноски и перекрёстные ссылки прочитаны; сомнительный OCR проверен по оригиналу.
+- [ ] Источники, страницы, версии, факты объекта и выводы прослеживаются; дубли и противоречия проверены.
+- [ ] Word-файл `{OBJECT_NORMS_REPORT}` создан, полностью отрендерен и визуально проверен.
+- [ ] Исходные DWG и другие материалы не изменены; нерешённые ограничения полноты указаны явно.
+
+Запуск нельзя считать завершённым по одному поисковому индексу, списку названий СП или непроверенному DOCX.
+"""
         if run.get("task_variant") == "analysis_word":
+            source_selection = run.get("hard_constraints", {}).get("source_remark_selection_word_only")
+            selection_checks = (
+                "- [ ] В отдельной копии DWG зелёным внешним цветом помечены и пронумерованы 1, 2, 3, … "
+                "только исходные группы замечаний с подтверждённым нарушением; замечания этапизации и уже "
+                "выданные у планов группы исключены; AutoCAD-id и исходные свойства записаны.\n"
+                "- [ ] Внутренние красные и фиолетовые цвета MText не менялись; возможность возврата внешнего "
+                "цвета ByLayer проверена; номера каждой выбранной группы в DWG и Word совпадают, "
+                "результатная копия перечитана и зарегистрирована.\n"
+                if source_selection else ""
+            )
+            actualization_checks = (
+                "- [ ] Все ранее выданные замечания проверяемого объёма перечислены в Word с их "
+                "существующими номерами, этажами, прежними местами и статусами.\n"
+                "- [ ] Для каждого существующего номера отдельно указаны новые места с адресами, "
+                "пунктами норм и требуемыми лучами либо явно сказано, что новых мест нет; "
+                "дубликаты прежних мест исключены.\n"
+                if run.get("mode") == "actualization_protocol" else ""
+            )
+            cad_check = ("- [ ] Исходный DWG не изменён; вся разрешённая внешняя зелёная пометка выполнялась только "
+                         "в закреплённой отдельной копии.\n" if source_selection else
+                         "- [ ] Подтверждено, что AutoCAD использовался только для чтения и исходные материалы не изменены.\n")
             return f"""# Контроль качества: {run['mode_label']} — анализ и задание в Word
 
 Объект: {run['project_snapshot'].get('name', run['project_slug'])}  
@@ -855,15 +1163,17 @@ class RunStore:
 Помощник выполняет контроль по исходным материалам и готовому DOCX. Исходный DWG и другие исходные файлы не изменяются.
 
 - [ ] Проверены объект, вид работы, дата ГПЗУ, исходный DWG и версия правил.
+- [ ] Прочитана история проверок этого объекта; состояние планов подтверждено, влияние изменений на прежние результаты записано.
 - [ ] Прочитаны паспорт, специальные вводные, вложения, ответы заказчика и все применимые инструкции.
 - [ ] Охвачены все этажи, помещения, замечания, запросы и специальные условия заявленной области.
+- [ ] Для каждого выдаваемого замечания написано, что именно нарушено, указаны фактическое и требуемое значения и точные пункты всех относящихся норм.
 - [ ] Каждый вывод связан с конкретным фактом, местом, применимой нормой, редакцией, пунктом, исключениями и источником.
 - [ ] Для каждого требуемого действия указано, что именно и где выполнить; приведён готовый текст замечания или запроса.
 - [ ] Для графических действий описаны этаж, помещение/оси, граница или объект, тип элемента, оформление и цель выноски.
-{category_layer_check}- [ ] Неустановленные сведения и допущения явно перечислены; ответы заказчика отделены от выводов помощника.
+{selection_checks}{actualization_checks}{category_layer_check}{source_remarks_check}- [ ] Неустановленные сведения и допущения явно перечислены; ответы заказчика отделены от выводов помощника.
 - [ ] Создан читаемый файл `ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx` в папке запуска.
 - [ ] DOCX отрендерен; визуально проверена каждая страница, исправлены обрезания, наложения, нечитаемые таблицы и разрывы.
-- [ ] Подтверждено, что AutoCAD использовался только для чтения и исходные материалы не изменены.
+{cad_check}
 - [ ] В реестре записаны путь DOCX, число проверенных страниц, выводы, источники и нерешённые вопросы.
 
 Запуск нельзя считать завершённым по одному тексту в чате или созданному, но не отрендеренному DOCX.
@@ -877,15 +1187,16 @@ class RunStore:
 Помощник выполняет контроль самостоятельно по фактическому результату в AutoCAD.
 
 - [ ] Проверены объект, вид работы, дата ГПЗУ, активный DWG и версия правил.
+- [ ] Прочитана история проверок этого объекта; состояние планов подтверждено, влияние изменений на прежние результаты записано.
 - [ ] Прочитаны паспорт, специальные вводные, вложения, ответы заказчика и все применимые инструкции.
 - [ ] Проверена полнота охвата заявленной области: этажей, помещений, замечаний и специальных условий.
 - [ ] Для каждого решения зафиксированы факт, применимость нормы, исключения, источник и вывод.
 - [ ] До изменений создана отдельная копия результата; исходный DWG на диске не изменён.
 - [ ] Все изменения выполнены напрямую в копии результата через AUTOM8LABS.
 - [ ] Каждый созданный или изменённый объект перечитан: AutoCAD-id, геометрия, слой, цвет, тип и вес линии, стиль текста/размера.
-{category_layer_check}- [ ] Проверены цели лучей, границы, проёмы, наложения, дубли, читаемость и соответствие образцу.
+{category_layer_check}{source_remarks_check}- [ ] Проверены цели лучей, границы, проёмы, наложения, дубли, читаемость и соответствие образцу.
 - [ ] Выполнены специальные проверки выбранного вида работы и актуализированы сводные элементы.
-- [ ] После сохранения выполнено свежее повторное чтение или экспорт итогового DWG.
+{issued_remarks_check}- [ ] После сохранения выполнено свежее повторное чтение или экспорт итогового DWG.
 - [ ] В реестре записаны результаты, пути файлов, AutoCAD-id, выполненные проверки и нерешённые вопросы.
 - [ ] Пользователю переданы путь результата, итог и существенные ограничения.
 
@@ -900,6 +1211,38 @@ class RunStore:
         rules = (folder / "ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8-sig")
         steps = "\n".join(f"{index}. {step}" for index, step in enumerate(run["steps"], 1))
         documents = run["knowledge_documents"]
+        prior_history = read_json(folder / PRIOR_SNAPSHOT_NAME, {"runs": []})
+        kind = work_kind(run["mode"], run["task_variant"])
+        grouped_prior = prior_history.get("by_work_kind", {})
+        same_kind_history = (grouped_prior.get(kind, []) if isinstance(grouped_prior, dict) else
+                             [entry for entry in prior_history.get("runs", []) if entry.get("work_kind") == kind])
+
+        def summarize_prior(entry: dict[str, Any], *, details: bool = True) -> dict[str, Any]:
+            summary = {key: entry.get(key) for key in (
+                "run_id", "work_iteration", "created_at", "work_kind", "result_complete", "gpzu",
+                "knowledge_digest", "plan_revision", "registry_file", "run_file", "result_dwg",
+                "word_report", "findings_count"
+            )}
+            if details:
+                summary["finding_summaries"] = entry.get("finding_summaries", [])[:25]
+                summary["continuity_items"] = entry.get("continuity_items", [])[:25]
+                summary["more_findings_in_registry"] = len(entry.get("finding_summaries", [])) > 25
+                summary["more_context_in_registry"] = len(entry.get("continuity_items", [])) > 25
+            return summary
+
+        recent_same_kind = [summarize_prior(entry) for entry in same_kind_history[:10]]
+        other_kind_history = {
+            other_kind: [summarize_prior(entry, details=False) for entry in entries[:5]]
+            for other_kind, entries in grouped_prior.items() if other_kind != kind
+        } if isinstance(grouped_prior, dict) else {}
+        plan_revision = run.get("plan_revision", {})
+        plan_status = plan_revision.get("status", "unconfirmed")
+        plan_status_description = {
+            "initial": "первая итерация этого вида работы: предыдущей итерации для сравнения нет",
+            "same": "заказчик сообщил, что планы не изменились",
+            "new": "заказчик сообщил о новых или изменённых планах",
+            "unconfirmed": "изменение планов не подтверждено; уточнить у заказчика",
+        }.get(plan_status, "неизвестно")
         readiness = list(run.get("warnings", []))
         readiness.extend(run.get("preparation", {}).get("errors", []))
         readiness_text = "\n".join(f"- {item}" for item in readiness) or "- Обязательные поля приложения заполнены. Фактическую достаточность материалов помощник проверяет перед работой."
@@ -916,16 +1259,72 @@ class RunStore:
         smoke_free_stairwells = str(
             project.get("evacuation", {}).get("smoke_free_stairwells_description", "")
         ).strip() or "не заполнено"
+        stairs_evacuation = str(
+            project.get("evacuation", {}).get("stairs_evacuation_description", "")
+        ).strip() or "не заполнено"
         additional_inputs = additional_inputs_markdown(project)
         pump_inputs = fire_pump_rooms_markdown(project)
+        object_norms = run.get("task_variant") == "object_norms"
         analysis_word = run.get("task_variant") == "analysis_word"
-        if analysis_word:
+        source_selection_word = analysis_word and run.get("hard_constraints", {}).get("source_remark_selection_word_only")
+        if object_norms:
             opening = (
+                "Это отдельное задание по сбору требований СП для выбранного объекта, а не оценка нарушений или "
+                "графическая работа. AutoCAD разрешено использовать через AUTOM8LABS только для чтения фактов. "
+                "Не создавай, не изменяй, не удаляй и не сохраняй объекты AutoCAD. "
+                "Не переносить сведения других объектов и не считать поисковый индекс доказательством применимости."
+            )
+            result_contract = f"""
+## Требуемый результат: применимые нормы для объекта
+
+Создай `{folder / OBJECT_NORMS_REPORT}` по инструкции `28_НОРМЫ_ДЛЯ_ОБЪЕКТА.md` и разделу 10 регламента поиска. Основная часть — матрица только тех пунктов и частей пунктов СП, которые действительно распространяются на этот объект, с конкретным условием применения, подтверждёнными фактами и точной проверкой по перечню Росстандарта № 2594 на дату ГПЗУ. Отдельно перечисли условные требования, вопросы заказчику, исключённые кандидаты и пределы полноты. Не ограничивайся уже имеющимися замечаниями. Не изменяй DWG.
+
+Создай DOCX, отрендери его через `render_docx.py`, визуально проверь каждую страницу и исправь дефекты оформления.
+"""
+            completion = f"""Работа завершена после повторной сверки применимости каждой части пункта, проверки охвата тем и документов, создания и визуальной проверки `{folder / OBJECT_NORMS_REPORT}`. Перед завершением запиши чек-лист через `record_quality_control`, зарегистрируй DOCX через `record_word_report` и выполни `validate_run(for_application=true)`. Укажи пользователю путь документа и все ограничения полноты."""
+        elif analysis_word:
+            opening = ((
+                "Это самостоятельное задание на полный нормативный анализ и Word-результат. Разрешённые "
+                "изменения AutoCAD — внешняя зелёная пометка и рабочая последовательная нумерация "
+                "подтверждённо выдаваемых исходных замечаний слева от планов в отдельной копии DWG через "
+                "`AUTOM8LABS MCP Connector for AutoCAD`. Исходный DWG, внутренние цвета MText, основной текст "
+                "и слои не изменяй; править можно только цифровой номер выбранной исходной группы. "
+                "Не создавай замечаний у планов, лучей, "
+                "размеров и облаков: точные действия опиши в Word."
+            ) if source_selection_word else (
                 "Это самостоятельное задание пользователя на полный сбор данных и нормативный анализ без изменения "
                 "чертежа. Для исследования DWG используй `AUTOM8LABS MCP Connector for AutoCAD` только в режиме чтения. "
                 "Не создавай, не изменяй, не удаляй и не сохраняй объекты AutoCAD. Любое указание ниже о нанесении, "
                 "копировании, построении, исправлении или сохранении графики означает: определить точное действие и "
                 "описать его в итоговом Word-файле, но не выполнять."
+            ))
+            selection_contract = (
+                "\n7. Для оценки соответствия АР и актуализации отдельно перечисли все исходные группы замечаний слева от планов: "
+                "какие выбраны для будущей выдачи, внешне помечены зелёным и пронумерованы подряд с 1 в "
+                "результатной копии DWG, а какие не выбраны и почему. Номера замечаний этапизации в этот ряд "
+                "не включай. При актуализации уже выданные у планов группы не помечай как новые: "
+                "сохрани их номера и укажи отдельно статус и новые места без дублирования. Для каждой выбранной исходной группы "
+                "укажи рабочий номер, точно совпадающий с номером слева от плана в DWG, исходный блок и "
+                "AutoCAD-id, фактическое "
+                "нарушение, точные пункты нормы, этаж, цели будущих лучей, сохранность внутренних красных/фиолетовых "
+                "цветов и путь зарегистрированной копии. Список по каждому месту выстрой так: 1) место нарушения "
+                "(этаж, помещение, назначение, оси), 2) конкретное несоответствие норме с фактическим и требуемым "
+                "параметром и точными пунктами СП, 3) существующее выданное замечание с его сохранённым "
+                "номером, если место добавляется к нему, либо новое подлежащее выдаче замечание с рабочим "
+                "номером из DWG. "
+                "Если внешнее перекрашивание с последующим возвратом ByLayer "
+                "не сохраняет исходное оформление, не повреждай текст: опиши ограничение.\n"
+                if source_selection_word else ""
+            )
+            actualization_contract = (
+                "\n8. Для актуализации составь отдельный реестр всех ранее выданных замечаний проверяемого "
+                "объёма. Для каждой группы укажи её существующий номер на плане, этаж, AutoCAD-id, прежние "
+                "места и их статусы. Под тем же номером перечисли все дополнительно выявленные места нарушения: "
+                "помещение/оси и назначение, что конкретно нарушено и по какому пункту СП, почему действует "
+                "именно это уже выданное замечание, какие новые лучи и обмеры нужны. Проверь отсутствие дубля "
+                "прежней цели. Если новых мест нет, так и запиши. Не присваивай этим группам рабочие номера "
+                "зелёного отбора и не перенумеровывай их.\n"
+                if run.get("mode") == "actualization_protocol" else ""
             )
             result_contract = f"""
 ## Требуемый результат: Word-задание
@@ -936,14 +1335,17 @@ class RunStore:
 
 1. Объект, вид проверки, `run_id`, дата ГПЗУ, проверенные исходные материалы и границы проверки.
 2. Принятые исходные данные, ответы заказчика, допущения и отдельный список сведений, которых не хватает.
-3. Результаты по этажам и участкам. Для каждой записи укажи помещение/номер/оси или другой точный ориентир, существующее состояние, требуемое действие, готовый текст замечания или запроса, нормативный документ, редакцию, пункт, область применения, исключения и краткое обоснование.
+3. Результаты по этажам и участкам. Для каждой записи укажи помещение/номер/оси или другой точный ориентир, что конкретно нарушено: фактическое состояние/значение и требуемое значение/условие, требуемое действие, готовый текст замечания или запроса, нормативный документ и редакцию, все относящиеся пункты/подпункты/таблицы, область применения, исключения и краткое обоснование.
 4. Для требуемой графики укажи точное место, тип линии/преграды/заполнения/размера/выноски, слой, цвет, вес, стиль, направление и цель луча, если это применимо. Для оценки преград перечисли каждую требуемую границу, проём, дверь, окно, ворота, штору, перекрытие, категорию, венткамеру и изменение легенды.
 5. Сводный перечень подтверждённых замечаний, запросов, действий на чертеже, соответствующих или неприменимых пунктов и нерешённых вопросов.
 6. Перечень использованных норм и документов с точными ссылками на пункты и источники.
+{selection_contract}{actualization_contract}
 
 Используй заголовки, обычные абзацы и компактные таблицы. Не помещай весь материал в одну широкую таблицу. Не включай служебный JSON, внутренние рассуждения или технический журнал инструментов. Создай DOCX средствами подготовки документов, отрендери его через `render_docx.py`, визуально проверь каждую страницу и исправь дефекты оформления.
 """
-            completion = f"""Работа завершена, когда весь объём инструкции режима проанализирован, выводы проверены повторно, исходные материалы остались неизменными, а готовый DOCX сохранён по пути `{folder / 'ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx'}`, полностью отрендерен и визуально проверен. Перед завершением запиши чек-лист через `record_quality_control`, зарегистрируй DOCX через `record_word_report` и выполни `validate_run(for_application=true)`. Сообщи пользователю итог, полный путь Word-файла и существенные нерешённые вопросы."""
+            completion = (f"""Работа завершена, когда проверены все исходные блоки, в отдельной копии DWG обратимо помечены только подтверждённо выдаваемые замечания (либо зафиксирован пустой отбор), сохранность исходных цветов и исходного DWG проверена, а готовый DOCX сохранён по пути `{folder / 'ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx'}`, полностью отрендерен и визуально проверен. Перед завершением зарегистрируй копию через `record_result_dwg`, запиши чек-лист через `record_quality_control`, зарегистрируй DOCX через `record_word_report` и выполни `validate_run(for_application=true)`. Сообщи пользователю оба полных пути результата и существенные нерешённые вопросы."""
+                          if source_selection_word else
+                          f"""Работа завершена, когда весь объём инструкции режима проанализирован, выводы проверены повторно, исходные материалы остались неизменными, а готовый DOCX сохранён по пути `{folder / 'ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx'}`, полностью отрендерен и визуально проверен. Перед завершением запиши чек-лист через `record_quality_control`, зарегистрируй DOCX через `record_word_report` и выполни `validate_run(for_application=true)`. Сообщи пользователю итог, полный путь Word-файла и существенные нерешённые вопросы.""")
         else:
             opening = (
                 "Это самостоятельное задание пользователя. Выполни всю проверку, графическую работу и контроль качества сам. "
@@ -976,10 +1378,52 @@ class RunStore:
 - Функциональные классы: {', '.join(project.get('classification', {}).get('functional_classes', [])) or 'не заполнено'}
 - Степень огнестойкости: {project.get('classification', {}).get('fire_resistance_degree', '') or 'не заполнено'}
 - Класс конструктивной пожарной опасности: {project.get('classification', {}).get('constructive_fire_hazard_class', '') or 'не заполнено'}
-- Высота по п. 3.1 СП 1: {str(height) + ' м' if height is not None else 'не заполнено'}
-- Высота от пола до потолка для зданий Ф5: {str(f5_height) + ' м' if f5_height is not None else 'не заполнено'}
+- Высота по п. 3.1 СП 1: {height_for_task(height)}
+- Высота от пола до потолка для зданий Ф5: {height_for_task(f5_height)}
+- Высоты могут содержать ограничения, диапазоны и пояснения заказчика. Учитывай их полностью; не подменяй предельное значение точным фактическим обмером. Если для вывода нужна точная высота и её нет, запроси уточнение.
 - Деление на пожарные отсеки: {division}
+- Принятое положение об эвакуационных лестницах: {stairs_evacuation}
 - Наличие незадымляемых лестничных клеток: {smoke_free_stairwells}
+
+## Датированная история изменений объекта
+
+Эти записи относятся к паспорту объекта и доступны при любом виде работы. Дата изменения и дата внесения записи различаются. Перед проверкой сопоставь события с актуальными исходными материалами и проверь влияние каждого изменения на связанные решения; описание в журнале само по себе не доказывает соответствие планов.
+
+```json
+{json.dumps(run.get('project_change_log_snapshot', project.get('change_log', [])), ensure_ascii=False, indent=2)}
+```
+
+## Преемственность проверок этого объекта
+
+- Вид работы в истории: `{kind}`.
+- Итерация этого вида работы: {plan_revision.get('work_iteration', 1)}; предыдущих итераций этого вида: {run.get('prior_same_work_runs_count', 0)}.
+- Непосредственно предыдущая итерация этого же вида: `{plan_revision.get('comparison_run_id', '') or 'нет'}` (№ {plan_revision.get('comparison_iteration', 0)}).
+- Всего запусков объекта до текущего, включая другие виды: {run.get('prior_runs_count', 0)}.
+- Состояние планов относительно непосредственно предыдущей итерации этого вида: {plan_status_description}.
+- Пояснение заказчика об изменениях: {plan_revision.get('user_note', '') or 'не указано'}.
+- Изменённых полей паспорта относительно непосредственно предыдущей итерации этого вида: {run.get('passport_changes', {}).get('count', 0)}.
+- Проектный индекс истории: `{self.projects.project_dir(run['project_slug']) / HISTORY_NAME}`.
+- Зафиксированный снимок прежних запусков: `{folder / PRIOR_SNAPSHOT_NAME}`.
+
+Основная цепочка строго последовательна внутри одного вида работы: итерация 3 опирается на 2, итерация 4 — на 3 и так далее. Не пропускай непосредственно предыдущую итерацию, даже если она не завершена; при этом явно проверь её статус и доказательства. Прочитай всю историю этого вида, чтобы не потерять подтверждённые факты старых итераций, но текущие выводы не копируй автоматически. Запуски других видов работ используй отдельно и только как вторичный источник для анализа влияния общих изменений: они не заменяют предыдущую итерацию и не определяют статус планов этого вида. Если состояние планов `unconfirmed`, спроси заказчика, новые ли планы относительно указанного запуска; не объявляй геометрию неизменной по совпадению пути или времени файла. Если есть изменения, сопоставь их с прежними замечаниями и решениями по всем затронутым видам работ; составь матрицу влияния. Если планы те же, проверь новые ответы, паспорт, нормы и нерешённые вопросы. Зафиксируй архитектурные факты, решения, изменения и их влияние через `record_continuity` с источниками. Старые реестры и результаты не перезаписывай.
+
+Автоматически найденные различия полей паспорта (это подсказка для анализа, а не вывод по DWG; служебные даты не сравниваются):
+
+```json
+{json.dumps(run.get('passport_changes', {}), ensure_ascii=False, indent=2)}
+```
+
+Предыдущие итерации **этого вида работы**, от новой к старой (полная цепочка — в файле снимка):
+
+```json
+{json.dumps(recent_same_kind, ensure_ascii=False, indent=2)}
+```
+
+Другие виды работ, сгруппированные отдельно; это только связанные материалы, а не основа сравнения итераций:
+
+```json
+{json.dumps(other_kind_history, ensure_ascii=False, indent=2)}
+```
 
 Перед продолжением сравни текущий паспорт и хеш правил с этим снимком. При изменении создай новый запуск, сохранив этот как историю. Не переноси факты другого объекта.
 

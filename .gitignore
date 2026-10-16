@@ -25,3 +25,12 @@ implementation_pp_*/
 # Temporary and generated office files.
 ~$*
 *.tmp
+
+# Local diagnostics and per-object investigation scripts are not application sources.
+/tmp/
+acad.err
+/.idea/
+/tools/inspect_dmitrovka_doors_slabs.py
+.env
+.env.*
+!.env.example

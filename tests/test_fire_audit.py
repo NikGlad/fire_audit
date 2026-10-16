@@ -38,6 +38,77 @@ class FireAuditTestCase(unittest.TestCase):
         project["classification"]["constructive_fire_hazard_class"] = "С1"
         return self.app.projects.save("test", project)["project"]
 
+    def test_projects_are_listed_by_display_name_in_russian_alphabetical_order(self) -> None:
+        for name, slug in (
+            ("Ясень", "a"), ("Ёж", "z"), ("Абрикос", "m"),
+            ("Жук", "b"), ("Ель", "q"),
+        ):
+            self.app.projects.create(name, slug)
+        self.assertEqual(
+            [item["name"] for item in self.app.projects.list_projects()],
+            ["Абрикос", "Ель", "Ёж", "Жук", "Ясень"],
+        )
+
+    def test_dated_project_change_is_shared_across_work_modes(self) -> None:
+        self.create_ready_project()
+        event = self.app.projects.add_change(
+            "test", event_date="2026-10-05", category="Планы",
+            description="Изменены двери второго этажа", affected_scope="План второго этажа",
+            source_reference="Письмо заказчика от 05.10.2026", impact_notes="Проверить выходы и пути")
+        self.assertEqual(event["event_date"], "2026-10-05")
+        self.assertTrue(event["recorded_at"])
+        self.assertEqual(self.app.projects.load("test")["change_log"], [event])
+        first = self.app.runs.create("test", "actualization_protocol")
+        second = self.app.runs.create("test", "compliance")
+        for result in (first, second):
+            self.assertEqual(result["run"]["project_change_log_snapshot"], [event])
+            task = Path(result["task_file"]).read_text(encoding="utf-8")
+            self.assertIn("Датированная история изменений объекта", task)
+            self.assertIn("Изменены двери второго этажа", task)
+            self.assertIn("Письмо заказчика от 05.10.2026", task)
+        later = self.app.projects.add_change(
+            "test", event_date="2026-10-06", category="СТУ", description="Уточнено специальное условие",
+            source_reference="СТУ, редакция 06.10.2026")
+        self.assertEqual(len(self.app.projects.load("test")["change_log"]), 2)
+        self.assertEqual(first["run"]["project_change_log_snapshot"], [event])
+        self.assertNotEqual(event["id"], later["id"])
+        stale_passport = self.app.projects.load("test")
+        stale_passport["change_log"] = [later]
+        with self.assertRaisesRegex(ValueError, "Историю изменений нельзя удалить"):
+            self.app.projects.save("test", stale_passport)
+        with self.assertRaisesRegex(ValueError, "недействительная дата"):
+            self.app.projects.add_change(
+                "test", event_date="2026-02-30", category="Планы",
+                description="Ошибка", source_reference="Письмо")
+
+    def test_one_change_can_have_multiple_kinds_and_legacy_kind_remains_readable(self) -> None:
+        project = self.create_ready_project()
+        legacy = {
+            "id": "legacy-change", "event_date": "2026-09-25",
+            "recorded_at": "2026-09-25T10:00:00+00:00", "category": "Планы",
+            "description": "Прежняя запись", "source_reference": "Письмо заказчика",
+        }
+        project["change_log"] = [legacy]
+        self.app.projects.save("test", project)
+        item = self.app.projects.add_change(
+            "test", event_date="2026-10-05", categories=["Планы", "Вводные", "СТУ"],
+            description="Изменены планы и условия", source_reference="Комплект от заказчика")
+        self.assertEqual(item["categories"], ["Планы", "Вводные", "СТУ"])
+        self.assertEqual(item["category"], "Планы")
+        self.assertEqual(self.app.projects.load("test")["change_log"], [legacy, item])
+        task = self.app.runs.create("test", "actualization_protocol")
+        task_text = Path(task["task_file"]).read_text(encoding="utf-8")
+        self.assertIn('"categories": [', task_text)
+        self.assertIn('"СТУ"', task_text)
+        with self.assertRaisesRegex(ValueError, "один или несколько"):
+            self.app.projects.add_change(
+                "test", event_date="2026-10-05", categories=[],
+                description="Без вида", source_reference="Письмо")
+        with self.assertRaisesRegex(ValueError, "один или несколько"):
+            self.app.projects.add_change(
+                "test", event_date="2026-10-05", categories=["Планы", "Планы"],
+                description="Повтор", source_reference="Письмо")
+
     def set_valid_ray_origin(self, finding: dict, plan_position: str = "right") -> None:
         side_and_point = {
             "right": ("right", [100.0, 50.0]),
@@ -174,7 +245,7 @@ class FireAuditTestCase(unittest.TestCase):
         compliance = self.app.knowledge.context_for_mode("compliance")
         article89 = self.app.knowledge.context_for_mode("article89")
         self.assertIn("не перемещать и не переставлять", stage)
-        self.assertIn("скопировать к соответствующему плану всю неделимую группу", compliance)
+        self.assertIn("скопировать всю неделимую исходную группу", compliance)
         self.assertNotIn("переместить к соответствующему плану всю неделимую группу", compliance)
         self.assertIn("Сохранение оригинала в блоке после выдачи его копии не является отказом", compliance)
         self.assertNotIn("у каждого неперенесённого исходного элемента", compliance)
@@ -189,17 +260,67 @@ class FireAuditTestCase(unittest.TestCase):
             self.assertIn("read_norm_document", context)
             self.assertIn("find_vniipo_letters", context)
 
-    def test_actualization_protocol_mode_is_registered_and_safe_until_instruction(self) -> None:
+    def test_article89_sanitary_exclusion_is_shared_but_not_a_general_exemption(self) -> None:
+        from fire_audit.knowledge import MODE_FILES
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.app.knowledge.context_for_mode(mode)
+                self.assertIn("душевые, ванные, туалеты и санузлы не проверять по статье 89", context)
+                self.assertIn("не проверялось по указанию пользователя", context)
+                self.assertIn("не отменяет проверок по другим применимым требованиям", context)
+                self.assertIn("не исключать автоматически преддушевые", context)
+        self.create_ready_project()
+        for mode in ("article89", "compliance", "actualization_protocol"):
+            with self.subTest(run_mode=mode):
+                run = self.app.runs.create("test", mode)["run"]
+                constraints = run["hard_constraints"]
+                self.assertEqual(constraints["article89_excluded_initial_room_purposes"],
+                                 ["душевая", "ванная", "туалет", "санузел"])
+                self.assertTrue(constraints["article89_exclusion_is_user_scope_not_normative_exemption"])
+                self.assertTrue(constraints["article89_exclusion_does_not_apply_to_other_requirements"])
+                self.assertTrue(constraints["article89_excluded_rooms_preserve_transit_topology"])
+
+    def test_article89_task_uses_confirmed_passport_stair_status(self) -> None:
+        project = self.create_ready_project()
+        project["evacuation"]["stairs_evacuation_description"] = "Все лестницы считать эвакуационными"
+        self.app.projects.save("test", project)
+
+        result = self.app.runs.create("test", "article89")
+        run = result["run"]
+        constraints = run["hard_constraints"]
+        self.assertTrue(constraints["confirmed_passport_positions_control_object_facts"])
+        self.assertTrue(constraints["object_specific_user_positions_override_generic_defaults"])
+        self.assertTrue(constraints["article89_passport_stair_evacuation_status_controls_type_e"])
+
+        task = Path(result["task_file"]).read_text(encoding="utf-8")
+        self.assertIn(
+            "Принятое положение об эвакуационных лестницах: Все лестницы считать эвакуационными",
+            task,
+        )
+        self.assertIn("в том числе открытую лестницу 2-го типа", task)
+        self.assertIn("типовыми допущениями общих инструкций", task)
+
+    def test_actualization_protocol_uses_approved_rules_and_preserves_scope(self) -> None:
         self.create_ready_project()
         context = self.app.knowledge.context_for_mode("actualization_protocol")
-        self.assertIn("Алгоритм этого вида проверки ещё не передан", context)
+        self.assertIn("проверять изменённые места и всё, на что эти изменения могут повлиять", context.lower())
+        self.assertIn("Обратный перенос ошибочно закрытого нарушения", context)
+        self.assertIn("экспертиза устранено протокол", context)
+        self.assertIn("экспертиза устранено", context)
         result = self.app.runs.create("test", "actualization_protocol")
         run = result["run"]
         self.assertEqual(run["mode_label"], "Актуализация")
-        self.assertFalse(run["hard_constraints"]["workflow_instructions_ready"])
-        self.assertFalse(run["hard_constraints"]["autocad_actions_enabled"])
+        self.assertTrue(run["hard_constraints"]["workflow_instructions_ready"])
+        self.assertTrue(run["hard_constraints"]["autocad_actions_enabled"])
+        self.assertFalse(run["hard_constraints"]["actualization_existing_findings_only"])
+        self.assertTrue(run["hard_constraints"]["actualization_unified_review"])
+        self.assertTrue(run["hard_constraints"]["actualization_deduplicate_existing_targets"])
+        self.assertTrue(run["hard_constraints"]["actualization_all_targets_required_to_resolve_group"])
+        self.assertTrue(run["hard_constraints"]["actualization_fire_safety_frame_excluded"])
+        self.assertEqual(run["hard_constraints"]["actualization_resolved_layer_color"], 3)
         task_text = Path(result["task_file"]).read_text(encoding="utf-8")
-        self.assertIn("не выполнять анализ, не создавать графику и не изменять AutoCAD", task_text)
+        self.assertIn("экспертиза устранено", task_text)
+        self.assertIn("сохранять номера", task_text)
 
     def test_ar_assessment_transfer_mode_is_registered_and_safe_until_instruction(self) -> None:
         self.create_ready_project()
@@ -383,6 +504,30 @@ class FireAuditTestCase(unittest.TestCase):
         invalid_errors, _ = self.app.projects.validate(saved)
         self.assertTrue(any("положительным числом" in value for value in invalid_errors))
 
+    def test_height_explanations_are_preserved_in_passport_and_task(self) -> None:
+        from fire_audit.projects import height_for_task
+        project = self.create_ready_project()
+        height = 'не более 28 м; по п.3.1 СП1.'
+        ceiling = '3,2–4.5 м, в производственной части; уточняется.'
+        project['geometry'].update(height_m=height, floor_to_ceiling_height_m=ceiling)
+        saved = self.app.projects.save('test', project)['project']
+        errors, warnings = self.app.projects.validate(saved)
+        self.assertFalse(errors)
+        self.assertFalse(any('высота' in text.lower() for text in warnings))
+        run = self.app.runs.create('test', 'compliance')
+        task = Path(run['task_file']).read_text(encoding='utf-8')
+        self.assertIn('Высота по п. 3.1 СП 1: ' + height + '\n', task)
+        self.assertIn('Высота от пола до потолка для зданий Ф5: ' + ceiling + '\n', task)
+        for value, expected in [(None, 'не заполнено'), ('  ', 'не заполнено'),
+                                ('12,4', '12,4 м'), (3.6, '3.6 м'),
+                                ('уточняется', 'уточняется')]:
+            self.assertEqual(height_for_task(value), expected)
+        saved['geometry'].update(height_m='', floor_to_ceiling_height_m='  ')
+        errors, warnings = self.app.projects.validate(saved)
+        self.assertFalse(errors)
+        self.assertTrue(any('Не заполнена высота по' in text for text in warnings))
+        self.assertTrue(any('не заполнена высота от пола' in text for text in warnings))
+
     def test_fire_compartment_division_description_is_stored_and_passed_to_task(self) -> None:
         project = self.create_ready_project()
         self.assertEqual(project["geometry"].get("fire_compartment_division_description"), "")
@@ -457,6 +602,10 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertFalse(run["hard_constraints"]["save_dwg"])
         self.assertFalse(run["hard_constraints"]["overwrite_source_dwg"])
         self.assertTrue(run["hard_constraints"]["save_separate_result_dwg"])
+        self.assertTrue(run["hard_constraints"]["result_dwg_one_copy_per_assignment"])
+        self.assertTrue(run["hard_constraints"]["reuse_pinned_result_dwg_on_continuation"])
+        self.assertFalse(run["hard_constraints"]["new_run_requires_new_dwg"])
+        self.assertEqual(run["hard_constraints"]["result_dwg_filename_pattern_scope"], "initial_creation_only")
         self.assertFalse(run["hard_constraints"]["results_remain_in_open_source_document"])
         self.assertTrue(run["hard_constraints"]["assistant_executes_autocad_directly"])
         self.assertFalse(run["hard_constraints"]["local_control_confirmation_required"])
@@ -467,6 +616,8 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertTrue(registry["dwg_actions"]["result_copy_required"])
         task_text = Path(result["task_file"]).read_text(encoding="utf-8")
         self.assertIn("отдельную копию результата", task_text)
+        self.assertIn("Одно поручение — одна копия результата DWG", task_text)
+        self.assertIn("без нового SaveAs", task_text)
         self.assertIn("record_result_dwg", task_text)
         self.assertTrue(Path(result["quality_file"]).is_file())
 
@@ -514,6 +665,40 @@ class FireAuditTestCase(unittest.TestCase):
         application = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(application["ok"])
         self.assertEqual(application["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+
+    def test_result_dwg_can_reuse_prior_runs_pinned_copy_after_save_as(self) -> None:
+        project = self.create_ready_project()
+        drawings = self.root / "drawings"
+        drawings.mkdir()
+        source = drawings / "source.dwg"
+        source.write_bytes(b"source")
+        project["dwg"]["path"] = str(source)
+        self.app.projects.save("test", project)
+        first = self.app.runs.create("test", "actualization_protocol")
+        current = self.app.runs.create("test", "actualization_protocol")
+        result = drawings / f"source__actualization_protocol__{first['run']['run_id']}.dwg"
+        result.write_bytes(b"result")
+        registry_path = Path(current["registry_file"])
+        registry = read_json(registry_path)
+        actions = registry["dwg_actions"]
+        actions.update({
+            "result_copy_created": True, "result_copy_path": str(result),
+            "source_path": str(source),
+            "source_preservation": {
+                "sha256_before_edits": "a" * 64,
+                "sha256_after_edits": "a" * 64,
+                "source_last_write_unchanged": True,
+            },
+        })
+        write_json(registry_path, registry)
+        recorded = self.app.runs.record_result_dwg(
+            "test", current["run"]["run_id"], str(result),
+            source_document_contains_results=False,
+            copy_did_not_change_open_source_identity=False,
+        )
+        self.assertEqual(Path(recorded["result_copy_path"]), result.resolve())
+        self.assertFalse(recorded["copy_did_not_change_open_source_identity"])
+        self.assertEqual(recorded["source_preservation"]["sha256_after_edits"], "a" * 64)
 
     def test_semantic_blocks_preserve_order(self) -> None:
         self.create_ready_project()
@@ -624,7 +809,7 @@ class FireAuditTestCase(unittest.TestCase):
         ready = self.app.runs.validate("test", run_id)
         self.assertTrue(ready["ok"], ready["errors"])
 
-    def test_non_issued_source_requires_green_explanation(self) -> None:
+    def test_non_issued_source_requires_reason_not_drawing_comment(self) -> None:
         self.create_ready_project()
         result = self.app.runs.create("test", "compliance")
         run_id = result["run"]["run_id"]
@@ -638,6 +823,15 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, finding)
         missing = self.app.runs.validate("test", run_id)
         self.assertTrue(any("не указана причина" in error for error in missing["errors"]))
+
+        finding["decision"]["reason"] = "Проверенное решение соответствует требованию; доказательства в реестре."
+        finding["autocad"]["source_entity_ids"] = ["SOURCE-1"]
+        finding["autocad"]["overlap_checked"] = True
+        finding["autocad"]["status"] = "verified"
+        self.set_complete_individual_analysis(finding)
+        self.app.runs.add_finding("test", run_id, finding)
+        without_note = self.app.runs.validate("test", run_id, for_application=True)
+        self.assertEqual(without_note["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
 
         finding["output"]["non_issue_explanation"].update(
             {

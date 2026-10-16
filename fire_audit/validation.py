@@ -622,6 +622,8 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
     non_issue = output.get("non_issue_explanation", {})
     non_issue_required = status in NON_ISSUED_REVIEWED
     non_issue_planned = bool(str(non_issue.get("text", "")).strip()) and non_issue.get("green") is True
+    # A reviewed non-issue needs evidence in the registry, not a drawing note.
+    non_issue_note_present = bool(str(non_issue.get("text", "")).strip() or non_issue.get("entity_id"))
     source_group = autocad.get("source_group", {})
     placement = autocad.get("placement", {})
     issued_output = status == "violation" or (is_general and not non_issue_required)
@@ -725,7 +727,8 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
     stairwell_facade_opening_clearance = (
         measurement.get("measurement_type") == "stairwell_to_adjacent_facade_opening_horizontal_clearance"
         or (
-            "проем" in combined_text.replace("ё", "е")
+            "расстояни" in combined_text
+            and "проем" in combined_text.replace("ё", "е")
             and "лестнич" in combined_text
             and "наружн" in combined_text
             and "стен" in combined_text
@@ -781,7 +784,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
         )
         if target_graphics or ray_graphics:
             errors.append(f"{finding_id}: графика запрещена при результате {status}; допускается только зелёное пояснение рядом с исходным элементом")
-        if drawing_progress and not non_issue_planned and not is_general:
+        if drawing_progress and not non_issue_planned and not is_general and not non_issue_required:
             errors.append(f"{finding_id}: при результате {status} допускается только зелёное пояснение рядом с исходным элементом")
 
     if non_issue_required:
@@ -789,8 +792,12 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
             errors.append(f"{finding_id}: от зелёного пояснения о невыдаче луч строить запрещено")
 
     if non_issue_required:
-        if not str(non_issue.get("text", "")).strip():
+        if not any(str(value or "").strip() for value in (
+            decision.get("reason"), finding.get("analysis", {}).get("individual_reasoning"),
+            non_issue.get("text"),
+        )):
             errors.append(f"{finding_id}: не указана причина, почему исходный элемент не выдан")
+    if non_issue_required and non_issue_note_present:
         if non_issue.get("green") is not True:
             errors.append(f"{finding_id}: пояснение об отказе должно быть зелёным")
         if non_issue.get("placement") != "next_to_source":
@@ -821,7 +828,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
         errors.extend(_validate_compliance_source_copy(finding))
         if status != "violation" and not is_general and not non_issue_required and not stage_is_issued:
             errors.append(f"{finding_id}: отсутствует результат, разрешённый для нанесения")
-        if non_issue_required:
+        if non_issue_required and non_issue_note_present:
             if not autocad.get("source_entity_ids"):
                 errors.append(f"{finding_id}: не указан исходный элемент, рядом с которым размещается зелёное пояснение")
             if not non_issue_planned:
@@ -861,7 +868,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
             errors.append(f"{finding_id}: не выполнена проверка наложений")
         if autocad.get("status") not in {"verified", "applied", "post_checked"}:
             errors.append(f"{finding_id}: операция не прошла предварительную проверку")
-        if autocad.get("status") in {"applied", "post_checked"} and non_issue_required and not non_issue.get("entity_id"):
+        if autocad.get("status") in {"applied", "post_checked"} and non_issue_required and non_issue_note_present and not non_issue.get("entity_id"):
             errors.append(f"{finding_id}: не записан AutoCAD id созданного зелёного пояснения")
         if mandatory_registry_ray and autocad.get("status") in {"applied", "post_checked"} and not autocad.get("ray_entity_ids"):
             errors.append(f"{finding_id}: нанесённый обязательный луч не имеет AutoCAD-id в реестре")
@@ -921,6 +928,9 @@ def validate_source_reading(finding: dict[str, Any]) -> list[str]:
 
 
 def validate_registry(registry: dict[str, Any], for_application: bool = False) -> dict[str, Any]:
+    if registry.get("mode") == "actualization_protocol":
+        from .actualization_validation import validate_actualization_registry
+        return validate_actualization_registry(registry, for_application=for_application)
     errors: list[str] = []
     warnings: list[str] = []
     placement_sequences: dict[str, list[int]] = {}

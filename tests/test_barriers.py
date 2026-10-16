@@ -58,6 +58,12 @@ class BarrierRulesTests(unittest.TestCase):
                 'rooms': [{'floor': '1', 'number': '1', 'name': 'Цех', 'category': 'В2'}]}
         profile = {'status': 'verified', 'unresolved_fields': []}
         self.assertEqual(preparation_errors({'barrier_assessment': data}, profile), [])
+        for flag in (False, True, None):
+            with self.subTest(additional_documents_reviewed=flag):
+                current = {**data, 'additional_documents_reviewed': flag}
+                self.assertEqual(preparation_errors({'barrier_assessment': current}, profile), [])
+        without_flag = {key: value for key, value in data.items() if key != 'additional_documents_reviewed'}
+        self.assertEqual(preparation_errors({'barrier_assessment': without_flag}, profile), [])
         modified = {**data, 'stu_status': 'provided', 'stu_documents': ['stu.pdf'],
                     'refrigeration_present': True}
         self.assertTrue(preparation_errors({'barrier_assessment': modified}, profile))
@@ -131,6 +137,10 @@ class BarrierRulesTests(unittest.TestCase):
                 self.assertIn('Покрытия помещений, расположенных в объёме другого помещения', app.knowledge.context_for_mode(mode))
                 self.assertIn('Правила о перекрытиях не изменяются.', app.knowledge.context_for_mode(mode))
                 self.assertIn('Покрытие малого помещения внутри большого объёма всегда обозначать выноской, независимо от таблицы 21 № 123-ФЗ.', app.knowledge.context_for_mode(mode))
+            barrier_context = app.knowledge.context_for_mode('barrier_assessment')
+            self.assertIn('только противопожарные перегородки 1-го типа EI 45', barrier_context)
+            self.assertIn('противопожарные перекрытия 2-го типа REI 60', barrier_context)
+            self.assertIn('стены 1-го типа REI 150 по одному лишь назначению насосной не применять', barrier_context)
             project = app.projects.create('Test', 'test')
             project['dates']['gpzu'] = '2026-04-23'
             app.projects.save('test', project)

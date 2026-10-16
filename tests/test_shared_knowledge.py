@@ -21,10 +21,126 @@ class SharedKnowledgeTests(unittest.TestCase):
         shutil.copytree(source / 'knowledge', self.root / 'knowledge')
         self.knowledge = KnowledgeBase(AppPaths(self.root))
 
+    def test_occupancy_rule_is_shared_and_not_bound_to_room_numbers(self):
+        filename = '25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md'
+        text = (self.root / 'knowledge' / filename).read_text(encoding='utf-8-sig')
+        self.assertIn('Расчёт вместимости переговорных и кабинетов обучения', text)
+        self.assertIn('по числу стульев', text)
+        self.assertIn('1 человека на 6 м²', text)
+        self.assertIn('округлением вверх', text)
+        self.knowledge.validate_document(filename, text)
+        for mode in ('compliance', 'actualization_protocol', 'stage', 'barrier_assessment'):
+            with self.subTest(mode=mode):
+                self.assertIn('Расчёт вместимости переговорных и кабинетов обучения',
+                              self.knowledge.context_for_mode(mode))
+
+    def test_door_fire_rating_and_self_closing_policy_reaches_every_mode(self):
+        heading = 'Обязательное замечание по огнестойкости и самозакрыванию дверей'
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn(heading, context)
+                self.assertIn('всегда принимать соответствующее требование невыполненным', context)
+                self.assertIn('не доказанная фактическая характеристика', context)
+                self.assertIn('Охваченное место повторно не выдавать', context)
+
+    def test_confirmed_passport_positions_have_priority_in_every_mode(self):
+        heading = 'Приоритет подтверждённых положений паспорта объекта'
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn(heading, context)
+                self.assertIn('обязательной исходной посылкой проверки именно этого объекта', context)
+                self.assertIn('не должна молча отменять такое положение', context)
+                self.assertIn('любых других норм', context)
+
+        article89 = self.knowledge.context_for_mode('article89')
+        self.assertIn('Статус лестниц по паспорту объекта', article89)
+        self.assertIn('в том числе открытую лестницу 2-го типа', article89)
+        self.assertIn('не выдавать замечание по статье 89 только из-за типа', article89)
+
+    def test_user_replies_do_not_interrupt_work_in_any_mode(self):
+        heading = 'Ответы и дополнения не прерывают выполнение'
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn(heading, context)
+                self.assertIn('без повторной команды «продолжай»', context)
+                self.assertIn('Сам факт отправки вопроса не является основанием остановить всю работу', context)
+                self.assertIn('автоматически возобновить проверку с этого места', context)
+                self.assertIn('не разрешает выдумывать данные', context)
+        self.assertIn('не заканчивать поручение только подтверждением получения ответа',
+                      self.knowledge.context_for_mode('compliance'))
+
+    def test_delayed_answers_allow_progress_without_rechecking_closed_items(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('Ожидание ответов и повторное использование завершённых проверок', context)
+                self.assertIn('Пользователь может ответить не сразу', context)
+                self.assertIn('при необходимости в следующих блоках', context)
+                self.assertIn('Пункт с ожидающим ответом не считать закрытым', context)
+                self.assertIn('разрешение не подразумевается молчанием', context)
+                self.assertIn('Полностью проверенное замечание или требование повторно не проверять', context)
+                self.assertIn('зависимость, выявленная дальнейшей проверкой', context)
+                self.assertNotIn('незакрытые пункты запрещают переход к следующему блоку', context)
+                self.assertNotIn('Запрещено оставлять их «на потом» и переходить ниже', context)
+
+    def test_corridor_60m_partition_assumption_reaches_all_modes(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('Принятое условие для деления коридоров на участки не более 60 м', context)
+                self.assertIn('всегда принимать показанные перегородки и двери непротивопожарными', context)
+                self.assertIn('Не запрашивать у пользователя тип этих перегородок', context)
+                self.assertIn('не установленная фактическая характеристика конструкций', context)
+                self.assertIn('Не переносить это допущение автоматически на другие требования', context)
+
+    def test_corridor_length_includes_all_connected_sections(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('учитывать все участки и ответвления единого коридора', context)
+                self.assertIn('длину определять суммированием их длин', context)
+                self.assertIn('Каждый участок включать в сумму один раз', context)
+                self.assertIn('Не складывать длины разных этажей', context)
+                self.assertIn('Не выдавать её за дословную цитату СП', context)
+                self.assertIn('ранее заданный вопрос закрыть указанием пользователя', context)
+
+    def test_production_height_is_self_assessed_without_questions_in_every_mode(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('Высота производственных помещений по п. 6.2.2 СП 4 — без запроса', context)
+                self.assertIn('Не запрашивать у пользователя сведения о высоте, наличии или регулярности непоказанных проходов', context)
+                self.assertIn('не объявлять локальный обмер минимальной высотой всех участков', context)
+                self.assertIn('2,2 м до низа выступающих конструкций', context)
+                self.assertIn('1,8 м на нерегулярных проходах', context)
+                self.assertIn('не отменяет независимые требования и вопросы по другим пунктам', context)
+
+    def test_exit_height_is_self_assessed_without_questions_in_every_mode(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('Высота эвакуационных выходов по п. 4.2.18 СП 1 — без запроса', context)
+                self.assertIn('запрос о высоте выходов не давать', context)
+                self.assertIn('Не запрашивать ведомость заполнения проёмов', context)
+                self.assertIn('не подтверждение высоты всех непоказанных дверей', context)
+                self.assertIn('не снимает независимую проверку ширины', context)
+
     @staticmethod
     def rule(rule_id, modes=None, replaces=None, status='active'):
         return {'id': rule_id, 'modes': modes or ['compliance'],
                 'replaces': replaces or [], 'status': status, 'text': f'TEXT_{rule_id}'}
+
+    def test_both_door_leaves_follow_scoped_customer_input(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                context = self.knowledge.context_for_mode(mode)
+                self.assertIn('Учёт открывания обеих створок двупольной двери', context)
+                self.assertIn('условие «для данной проверки» не превращать в безусловное допущение для других объектов', context)
+                self.assertIn('сумма номинальных ширин полотен не заменяет обмер просвета', context)
+                self.assertIn('не повторять уже закрытый вопрос', context)
 
     def validate_catalogue(self, rules):
         self.knowledge.validate_document('rule_overrides.json', json.dumps({'rules': rules}))

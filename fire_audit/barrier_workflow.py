@@ -467,12 +467,14 @@ class BarrierWorkflow:
             "sources":state["plan"]["sources"], "created_entities":state.get("receipt", {}).get("created", []),
             "unresolved":state.get("verification", {}).get("errors", []),
             "verification":state.get("verification"), "result_dwg":state.get("result_dwg")})
-        registry.setdefault("dwg_actions", {}).update({"work_completed":state["status"]=="verified",
+        # A legacy geometry receipt cannot complete the itemized source review.
+        # Completion is registered through RunStore after the mandatory fresh read.
+        registry.setdefault("dwg_actions", {}).update({"work_completed":False,
             "source_dwg":state["source_path"], "result_dwg":state.get("result_dwg"),
             "executor":"barrier_workflow_copy", "source_not_overwritten":state.get("verification", {}).get("ok") is True})
         write_json(path, registry)
         run = read_json(folder / "run.json")
-        run["status"] = "completed" if state["status"]=="verified" else "in_progress"
+        run["status"] = "geometry_verified" if state["status"]=="verified" else "in_progress"
         run["updated_at"] = utc_now()
         write_json(folder / "run.json", run)
 

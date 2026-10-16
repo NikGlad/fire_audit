@@ -46,7 +46,9 @@ class FireAuditApp:
                 "control_tab_supported":False,
                 "executor":"assistant_via_autom8labs", "assistant_normative_decisions_required":True,
                 "assistant_result_verification":True, "result_copy_becomes_active_document":True,
-                "results_remain_in_open_source_document":False, "source_document_unchanged":True},
+                "results_remain_in_open_source_document":False, "source_document_unchanged":True,
+                "source_remarks_inventory_required":True, "all_source_remarks_require_decisions":True,
+                "fresh_source_layer_read_before_completion":True},
             "normative_base": self.norms.status(),
             "hard_constraints": {
                 "autocad_connector": config.get(

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import re
+import unicodedata
+from uuid import uuid4
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,30 @@ from .paths import AppPaths
 
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+CHANGE_CATEGORIES = ("Планы", "Вводные", "Информация заказчика", "СТУ", "Другое")
+
+
+def height_for_task(value: Any) -> str:
+    """Keep qualifiers verbatim; legacy numbers and bare numeric text are metres."""
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return "не заполнено"
+    if isinstance(value, (int, float)) or re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?", text):
+        return text + " м"
+    return text
+
+
+def change_categories(item: dict[str, Any]) -> list[str]:
+    """Read both current multi-category and older single-category records."""
+    categories = item.get("categories")
+    return categories if isinstance(categories, list) else [item.get("category", "")]
+
+
+def project_name_sort_key(name: str) -> tuple[int, ...]:
+    """Case-insensitive name order with Ё immediately after Е."""
+    normalized = unicodedata.normalize("NFKC", name).strip().casefold()
+    return tuple(2 * ord("е") + 1 if char == "ё" else 2 * ord(char)
+                 for char in normalized)
 
 
 MANUAL_TEXT_FIELDS = (
@@ -67,7 +93,10 @@ class ProjectStore:
                     "path": str(project_file),
                 }
             )
-        return projects
+        return sorted(projects, key=lambda item: (
+            project_name_sort_key(str(item.get("name") or item.get("slug") or "")),
+            str(item.get("slug", "")).casefold(),
+        ))
 
     def project_dir(self, slug: str) -> Path:
         safe = slugify(slug)
@@ -82,6 +111,55 @@ class ProjectStore:
         if data is None:
             raise FileNotFoundError(f"Объект не найден: {slug}")
         return data
+
+    def add_change(self, slug: str, *, event_date: str, description: str,
+                   category: str | None = None, categories: list[str] | None = None,
+                   affected_scope: str = "",
+                   source_reference: str = "", impact_notes: str = "") -> dict[str, Any]:
+        """Append one dated event to the selected object's passport."""
+        item = self.build_change(event_date=event_date, description=description,
+                                 category=category, categories=categories,
+                                 affected_scope=affected_scope,
+                                 source_reference=source_reference, impact_notes=impact_notes)
+        project = self.load(slug)
+        project.setdefault("change_log", []).append(item)
+        self.save(slug, project)
+        return item
+
+    @staticmethod
+    def build_change(*, event_date: str, description: str,
+                     category: str | None = None, categories: list[str] | None = None,
+                     affected_scope: str = "", source_reference: str = "",
+                     impact_notes: str = "") -> dict[str, Any]:
+        """Validate a draft without writing, so all tabs can be saved together."""
+        if not DATE_RE.fullmatch(event_date):
+            raise ValueError("Дата изменения должна иметь формат ГГГГ-ММ-ДД")
+        try:
+            date.fromisoformat(event_date)
+        except ValueError as exc:
+            raise ValueError("Указана недействительная дата изменения") from exc
+        selected = categories if categories is not None else ([category] if category else [])
+        if (not isinstance(selected, list) or not selected or
+                any(not isinstance(value, str) or value not in CHANGE_CATEGORIES for value in selected) or
+                len(set(selected)) != len(selected)):
+            raise ValueError("Выберите один или несколько видов изменения из списка")
+        if category is not None and category != selected[0]:
+            raise ValueError("Основной вид изменения должен совпадать с первым выбранным видом")
+        if not description.strip():
+            raise ValueError("Опишите, что изменилось")
+        if not source_reference.strip():
+            raise ValueError("Укажите источник изменения: документ, лист или сообщение заказчика")
+        return {
+            "id": uuid4().hex,
+            "event_date": event_date,
+            "recorded_at": utc_now(),
+            "category": selected[0],
+            "categories": selected.copy(),
+            "description": description.strip(),
+            "affected_scope": affected_scope.strip(),
+            "source_reference": source_reference.strip(),
+            "impact_notes": impact_notes.strip(),
+        }
 
     def save(self, slug: str, data: dict[str, Any]) -> dict[str, Any]:
         safe = slugify(slug)
@@ -101,6 +179,10 @@ class ProjectStore:
             raise ValueError("; ".join(errors))
         folder = self.project_dir(safe)
         folder.mkdir(parents=True, exist_ok=True)
+        previous = read_json(folder / "project.json", {})
+        previous_changes = previous.get("change_log", [])
+        if previous_changes and data.get("change_log", [])[:len(previous_changes)] != previous_changes:
+            raise ValueError("Историю изменений нельзя удалить или переписать; добавьте новую запись с уточнением")
         write_json(folder / "project.json", data)
         return {"project": data, "warnings": warnings}
 
@@ -126,6 +208,35 @@ class ProjectStore:
             errors.append("Не заполнено название объекта")
         if not str(data.get("slug", "")).strip():
             errors.append("Не заполнен идентификатор объекта")
+        changes = data.get("change_log", [])
+        if not isinstance(changes, list):
+            errors.append("История изменений объекта должна быть списком")
+        else:
+            ids: set[str] = set()
+            for index, item in enumerate(changes, 1):
+                if not isinstance(item, dict):
+                    errors.append(f"Запись истории №{index} должна быть объектом")
+                    continue
+                event_date = item.get("event_date", "")
+                try:
+                    date.fromisoformat(event_date)
+                    if not DATE_RE.fullmatch(event_date):
+                        raise ValueError
+                except (TypeError, ValueError):
+                    errors.append(f"Запись истории №{index}: недействительная дата изменения")
+                categories = change_categories(item)
+                if (not categories or any(not isinstance(value, str) or value not in CHANGE_CATEGORIES
+                                          for value in categories) or
+                        len(set(categories)) != len(categories) or
+                        ("categories" in item and item.get("category") != categories[0])):
+                    errors.append(f"Запись истории №{index}: неизвестный или повторяющийся вид изменения")
+                if not str(item.get("description", "")).strip() or not str(item.get("source_reference", "")).strip():
+                    errors.append(f"Запись истории №{index}: нужны описание и источник")
+                item_id = item.get("id")
+                if not isinstance(item_id, str) or not item_id or item_id in ids:
+                    errors.append(f"Запись истории №{index}: идентификатор отсутствует или повторяется")
+                else:
+                    ids.add(item_id)
 
         dwg = data.get("dwg", {})
         if dwg.get("save_allowed"):
@@ -160,11 +271,11 @@ class ProjectStore:
             ("floor_to_ceiling_height_m", "Высота от пола до потолка для зданий Ф5"),
         ):
             value = geometry.get(key)
-            if value is not None and (
+            if value is not None and not isinstance(value, str) and (
                 isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0
             ):
-                errors.append(f"{label} должна быть положительным числом в метрах")
-        if geometry.get("height_m") is None:
+                errors.append(f"{label} должна быть положительным числом в метрах или текстом с пояснениями")
+        if not str(geometry.get("height_m") or "").strip():
             warnings.append("Не заполнена высота по п. 3.1 СП 1")
         fire_compartment_division = geometry.get("fire_compartment_division_description", "")
         if not isinstance(fire_compartment_division, str):
@@ -184,7 +295,7 @@ class ProjectStore:
         ]
         if (
             any(value.startswith("Ф5") for value in functional_classes)
-            and geometry.get("floor_to_ceiling_height_m") is None
+            and not str(geometry.get("floor_to_ceiling_height_m") or "").strip()
         ):
             warnings.append("Для здания Ф5 не заполнена высота от пола до потолка")
         if not dwg.get("path"):

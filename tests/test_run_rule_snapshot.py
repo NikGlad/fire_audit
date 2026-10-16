@@ -64,6 +64,17 @@ class RunRuleSnapshotTests(unittest.TestCase):
                                       wraps=self.app.knowledge.snapshot_for_mode) as capture:
                         result = self.app.runs.create(slug, mode)
                     capture.assert_called_once_with(mode)
+                    constraints = result['run']['hard_constraints']
+                    self.assertIs(constraints['explain_every_non_issued_source_in_green'], False)
+                    for key in (
+                        'routine_review_comments_on_drawing_forbidden',
+                        'individual_review_evidence_in_registry_required',
+                        'full_scope_tracking_required',
+                        'continue_independent_work_when_local_data_missing',
+                        'intermediate_save_is_not_completion',
+                        'verify_active_document_before_and_after_each_write',
+                    ):
+                        self.assertIs(constraints[key], True)
                     self.assert_consistent_artifacts(result)
                     for doc in result['run']['knowledge_documents']:
                         self.assertEqual(doc['sha256'], hashlib.sha256(Path(doc['path']).read_bytes()).hexdigest())
@@ -87,9 +98,8 @@ class RunRuleSnapshotTests(unittest.TestCase):
             'specific_door_callout_must_not_start_from_explanation_graphics',
             'independent_door_and_slab_normative_scan_required',
             'shaft_opening_callouts_forbidden',
-            'exterior_and_stair_walls_only_with_explicit_explanation_requirement',
-            'stairwell_walls_excluded_on_both_sides',
-            'stairwell_wall_exception_requires_explicit_fire_resistance',
+            'exterior_walls_only_with_explicit_explanation_requirement',
+            'internal_stairwell_walls_table21_required',
             'tambour_escape_route_rule_only_at_escape_route_interface',
             'corridor_cross_barrier_requires_independent_basis',
             'callouts_above_related_floor_without_overlaps',
@@ -101,8 +111,21 @@ class RunRuleSnapshotTests(unittest.TestCase):
             'large_storage_volume_adjacencies_must_be_reviewed',
             'same_category_production_rooms_need_no_shared_barrier_only_under_sp4_6_1_47',
             'vent_chambers_full_internal_boundary_ei45_including_corridors',
+            'vent_chamber_served_and_protected_fire_compartments_must_be_identified',
+            'vent_chamber_outside_served_or_protected_compartment_enclosure_ei150',
+            'vent_chamber_outside_served_or_protected_compartment_doors_type1',
+            'sp7_6_8_6_9_cross_compartment_conditions_must_be_checked',
+            'sp2_5_3_6_checked_after_all_barriers_drawn',
+            'sp2_5_3_6_actual_dimensions_required_for_all_checked_piers',
+            'sp2_5_3_6_keep_all_measurements_in_final_dwg',
+            'sp2_5_3_6_rays_target_dimension_objects',
         ):
             self.assertIs(constraints[key], True)
+        self.assertIs(constraints['unconfirmed_opening_infills_are_not_fire_rated'], True)
+        self.assertIs(constraints['stairwell_walls_excluded_on_both_sides'], False)
+        self.assertIs(constraints['stairwell_wall_exception_requires_explicit_fire_resistance'], False)
+        self.assertIs(constraints['opening_fire_rating_requires_object_specific_documentary_evidence'], True)
+        self.assertIn('8.2', constraints['vent_chamber_cross_compartment_basis'])
         self.assert_consistent_artifacts(result)
 
     def test_update_during_creation_does_not_mix_rule_versions(self):
@@ -167,7 +190,7 @@ class RunRuleSnapshotTests(unittest.TestCase):
                     self.assertNotIn(other, rules)
                     digests.add(result['run']['knowledge_digest'])
                     self.assertEqual(result['run']['hard_constraints']['autocad_actions_enabled'],
-                                     variant == 'full_execution')
+                                     variant in ('full_execution', 'analysis_word'))
         self.assertEqual(len(digests), 1)
         self.assertNotIn(old_runs[0]['run']['knowledge_digest'], digests)
         self.assertEqual(history, {path: path.read_bytes() for path in old_paths})

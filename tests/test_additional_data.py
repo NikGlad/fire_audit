@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from fire_audit.barrier_inputs import defaults, inputs_for, snapshot_attachment
+from fire_audit.barrier_inputs import defaults, inputs_for, snapshot_attachment, additional_inputs_markdown
 from fire_audit.barrier_ui import AdditionalDataPanel, BarrierPanel
 from fire_audit.runs import MODE_LABELS
 from mcp_server import MCPServer
@@ -77,10 +77,26 @@ class AdditionalDataTests(unittest.TestCase):
                     self.assertIn(json.dumps(self.project, ensure_ascii=False, indent=2), text)
                     self.assertIn('- Сведения пользователя: PRIVATE-PUMP', text)
                     self.assertIn('Открой относящиеся к задаче файлы', text)
+                    self.assertIn('независимо от состояния галочки', text)
+                    self.assertIn('Не требуй поставить галочку для начала работы', text)
+                    self.assertNotIn('Не завершён учёт дополнительных документов и ответов заказчика',
+                                     result['run'].get('preparation', {}).get('errors', []))
                     self.assertEqual(
                         result['run']['hard_constraints']['autocad_actions_enabled'],
-                        variant == 'full_execution' and context['instructions_ready'])
+                        (variant == 'full_execution' or
+                         (mode in {'compliance', 'actualization_protocol'} and variant == 'analysis_word'))
+                        and context['instructions_ready'])
         self.assertEqual(self.project_path.read_bytes(), before)
+
+    def test_review_instruction_does_not_depend_on_user_checkbox(self):
+        for flag in (False, True, None):
+            with self.subTest(flag=flag):
+                project = copy.deepcopy(self.project)
+                project['barrier_assessment']['additional_documents_reviewed'] = flag
+                text = additional_inputs_markdown(project)
+                self.assertIn('Во всех видах работ самостоятельно проверяй и учитывай', text)
+                self.assertIn('независимо от состояния галочки', text)
+                self.assertIn('снятая галочка не блокирует оценку преград', text)
 
     def test_new_data_does_not_rewrite_old_tasks_or_leak_to_other_projects(self):
         old = self.app.runs.create('shared-inputs', 'article89')

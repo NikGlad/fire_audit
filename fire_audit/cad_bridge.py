@@ -14,7 +14,8 @@ from typing import Any
 BRIDGE_NAME = "AUTOM8LABS MCP Connector for AutoCAD"
 DEFAULT_COMMAND = r"C:\Program Files\Autodesk\ApplicationPlugins\AUTOM8LABS.MCPConnectorAutoCAD.bundle\Contents\Bridge\MCPConnectorAutoCAD.Bridge.exe"
 READ_TOOLS = {"ping", "get_drawing_info", "get_entity_properties", "get_bounding_box",
-              "get_entities", "list_layers", "list_text_styles", "list_dimension_styles"}
+              "get_entities", "list_layers", "list_text_styles", "list_dimension_styles",
+              "list_blocks", "get_block_definition"}
 
 
 def unwrap(result: dict) -> Any:

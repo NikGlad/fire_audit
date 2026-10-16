@@ -25,7 +25,6 @@ class AdditionalDataPanel(ttk.Frame):
         self.message = tk.StringVar(value="Выберите объект. Данные этой вкладки используются во всех видах проверок выбранного объекта.")
         ttk.Label(self, textvariable=self.message, wraplength=950).pack(fill="x", pady=(0, 8))
         header = ttk.Frame(self); header.pack(fill="x")
-        ttk.Button(header, text="Перечитать паспорт", command=self.reload).pack(side="left", padx=3)
         ttk.Button(header, text="Сохранить дополнительные данные", command=self.save).pack(side="left", padx=3)
         ttk.Button(header, text="Проверить данные", command=self.readiness).pack(side="left", padx=3)
         tabs = ttk.Notebook(self); tabs.pack(fill="both", expand=True, pady=8)
@@ -90,6 +89,7 @@ class AdditionalDataPanel(ttk.Frame):
         self.table.bind("<Double-1>", lambda e: self.edit_room())
         ttk.Label(rooms, text="С / П в подписи вычисляется по названию. Категорию программа не рассчитывает. Класс части здания задаётся отдельно.", wraplength=940).pack(anchor="w")
         gui._tab_scroll_targets[self] = self.table
+        self.load_project()
 
     def load_project(self):
         self.slug = self.gui.current_slug
@@ -108,12 +108,9 @@ class AdditionalDataPanel(ttk.Frame):
         self.values["refrigeration_equipment_rooms"].set(", ".join(self.data.get("refrigeration_equipment_rooms", [])))
         self.values["special_conditions"].set(self.data.get("special_conditions", ""))
         self.refresh_tables()
-        self.message.set(f"{project.get('name', self.slug)} — помещения: {len(self.data['rooms'])}. Дополнительные данные используются во всех видах проверок этого объекта; после сохранения создайте новое задание.")
-
-    def reload(self):
-        if self.gui.current_slug:
-            self.gui.current_project = self.gui.app.projects.load(self.gui.current_slug)
-            self.gui._load_project_form()
+        self.message.set(
+            f"{project.get('name', self.slug)} — помещения: {len(self.data['rooms'])}. Дополнительные данные используются во всех видах проверок этого объекта; после сохранения создайте новое задание."
+            if self.slug else "Выберите объект. Данные этой вкладки используются во всех видах проверок выбранного объекта.")
 
     def collect(self):
         data = copy.deepcopy(self.data)
@@ -129,17 +126,26 @@ class AdditionalDataPanel(ttk.Frame):
             data[key] = widget.get("1.0", "end").strip()
         return validate_inputs(data)
 
+    def update_project_for_save(self, project, *, new_project=False):
+        """Include this panel's draft before either save button reloads the forms."""
+        if not self.gui.current_slug or (
+                self.slug != self.gui.current_slug and not (new_project and not self.slug)):
+            raise ValueError("Выберите объект")
+        if not new_project and project_digest(
+                self.gui.app.projects.load(self.slug)) != self.loaded_digest:
+            raise ValueError("Паспорт изменён после открытия дополнительных данных. "
+                             "Сохраните несохранённые правки отдельно и повторно выберите объект. "
+                             "Текущие данные на диске не перезаписаны.")
+        data = self.collect()
+        if self.categories_dirty:
+            data["category_source"] = snapshot_manual_categories(
+                self.gui.app.paths, self.gui.current_slug, data)
+        project["barrier_assessment"] = data
+
     def save(self):
         try:
-            if not self.slug or self.slug != self.gui.current_slug:
-                raise ValueError("Выберите объект")
-            if project_digest(self.gui.app.projects.load(self.slug)) != self.loaded_digest:
-                raise ValueError("Паспорт изменён после открытия дополнительных данных. Перечитайте его, чтобы сохранить уточнения помощника")
             project = self.gui._update_project_from_form()
-            project["barrier_assessment"] = self.collect()
-            if self.categories_dirty:
-                project["barrier_assessment"]["category_source"] = snapshot_manual_categories(
-                    self.gui.app.paths, self.slug, project["barrier_assessment"])
+            self.update_project_for_save(project)
             self.gui.current_project = self.gui.app.projects.save(self.slug, project)["project"]
             self.gui._load_project_form()
             self.message.set("Дополнительные данные сохранены для всех видов проверок этого объекта. Создайте новое задание.")

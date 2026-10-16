@@ -110,8 +110,27 @@ TOOLS = [
         read_only=False,
     ),
     tool(
+        "add_project_change",
+        "Добавить датированную запись в общую для всех видов работ историю изменений паспорта объекта. В categories можно указать несколько видов одного изменения. Прежние записи сохраняются.",
+        {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "event_date": {"type": "string", "description": "Дата изменения ГГГГ-ММ-ДД"},
+                "category": {"type": "string", "enum": ["Планы", "Вводные", "Информация заказчика", "СТУ", "Другое"]},
+                "categories": {"type": "array", "items": {"type": "string", "enum": ["Планы", "Вводные", "Информация заказчика", "СТУ", "Другое"]}, "minItems": 1, "uniqueItems": True},
+                "description": {"type": "string"},
+                "affected_scope": {"type": "string"},
+                "source_reference": {"type": "string"},
+                "impact_notes": {"type": "string"},
+            },
+            "required": ["slug", "event_date", "description", "source_reference"],
+        },
+        read_only=False,
+    ),
+    tool(
         "create_run",
-        "Создать отдельный запуск выбранной проверки: полное выполнение с AutoCAD либо анализ с итоговым заданием в Word. Режимы без утверждённого алгоритма создают только заготовку задания.",
+        "Создать отдельный запуск выбранной проверки: полное выполнение с AutoCAD, анализ в Word либо сбор применимых норм для объекта (mode=compliance, task_variant=object_norms). Режимы без утверждённого алгоритма создают только заготовку задания.",
         {
             "type": "object",
             "properties": {
@@ -133,9 +152,14 @@ TOOLS = [
                 },
                 "task_variant": {
                     "type": "string",
-                    "enum": ["full_execution", "analysis_word"],
+                    "enum": ["full_execution", "analysis_word", "object_norms"],
                     "default": "full_execution",
                 },
+                "plan_change_status": {
+                    "type": "string", "enum": ["same", "new", "unconfirmed"],
+                    "description": "Для повторного запуска: ответ заказчика о планах относительно предыдущей проверки. Если ответа нет, оставить пустым — помощник обязан уточнить.",
+                },
+                "plan_change_note": {"type": "string", "description": "Какие листы, этажи или помещения изменились, если известно."},
             },
             "required": ["slug", "mode"],
         },
@@ -148,6 +172,12 @@ TOOLS = [
         read_only=True,
     ),
     tool(
+        "get_project_history",
+        "Получить проектный индекс всех прошлых проверок, фактов, замечаний и ссылок на реестры выбранного объекта.",
+        {"type": "object", "properties": {"slug": {"type": "string"}}, "required": ["slug"]},
+        read_only=True,
+    ),
+    tool(
         "get_run",
         "Получить план запуска и реестр результатов.",
         {
@@ -156,6 +186,36 @@ TOOLS = [
             "required": ["slug", "run_id"],
         },
         read_only=True,
+    ),
+    tool(
+        "capture_barrier_source_remarks",
+        "Полностью перечитать слой пояснений ПП через AUTOM8LABS во всех пространствах активного исходного DWG или копии данного запуска. Сохраняет снимок в реестре; DWG не изменяет. Изменение слоя сбрасывает прежние решения и завершённость с сохранением истории.",
+        {"type": "object", "properties": {"slug": {"type": "string"}, "run_id": {"type": "string"}},
+         "required": ["slug", "run_id"]},
+        read_only=False,
+    ),
+    tool(
+        "record_barrier_source_decisions",
+        "Записать или дополнить решения по каждому исходному замечанию ПП, привязанные к digest снимка. Незавершённые решения можно сохранять, но они блокируют завершение. Служебные объекты исключать по одному с конкретным обоснованием. Для пустого слоя или слоя без замечаний требуется none_found_reason.",
+        {"type": "object", "properties": {
+            "slug": {"type": "string"}, "run_id": {"type": "string"},
+            "none_found_reason": {"type": "string"},
+            "delete_decision_ids": {"type": "array", "items": {"type": "string"},
+                                    "description": "Удалить ошибочные записи только из текущего реестра с сохранением истории; DWG не меняется."},
+            "decisions": {"type": "array", "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "inventory_digest": {"type": "string"},
+                "source_entity_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "kind": {"type": "string", "enum": ["remark", "non_remark"]},
+                "status": {"type": "string", "enum": ["resolved", "pending", "needs_clarification"]},
+                "decision": {"type": "string", "enum": ["applied", "already_satisfied", "not_applicable", "superseded", "non_remark"]},
+                "summary": {"type": "string"}, "basis": {"type": "string"},
+                "context_review": {"type": "string"}, "all_requirements_reviewed": {"type": "boolean"},
+                "result_refs": {"type": "array", "items": {"type": "string"}},
+                "non_remark_kind": {"type": "string", "enum": ["legend", "heading", "measurement", "reference_note"]}
+            }, "required": ["id", "inventory_digest", "source_entity_ids", "kind", "status", "decision",
+                            "summary", "basis", "result_refs"]}}
+        }, "required": ["slug", "run_id", "decisions"]},
+        read_only=False,
     ),
     tool(
         "record_semantic_blocks",
@@ -199,6 +259,32 @@ TOOLS = [
         read_only=False,
     ),
     tool(
+        "record_continuity",
+        "Сохранить с источниками архитектурные особенности, решения, изменения и их влияние в реестре текущего запуска и индексе объекта. Старые запуски не изменяются.",
+        {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "run_id": {"type": "string"},
+                "items": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["architecture", "normative_decision", "finding", "plan_change", "impact", "question"]},
+                        "description": {"type": "string"},
+                        "source": {"description": "План/лист, ответ заказчика, AutoCAD-id, нормативный источник либо запись реестра"},
+                        "location": {"type": "string"},
+                        "affected_modes": {"type": "array", "items": {"type": "string"}},
+                        "related_finding_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["id", "kind", "description"],
+                }},
+            },
+            "required": ["slug", "run_id", "items"],
+        },
+        read_only=False,
+    ),
+    tool(
         "record_quality_control",
         "Записать самостоятельный итоговый контроль выбранного результата: DWG либо аналитического DOCX.",
         {
@@ -237,7 +323,7 @@ TOOLS = [
     ),
     tool(
         "record_result_dwg",
-        "Для полной проверки после сохранения зарегистрировать отдельный DWG результата. Исходник остаётся без результатов нового запуска.",
+        "Зарегистрировать отдельный DWG результата полной проверки либо копию с обратимой зелёной пометкой и рабочей нумерацией выбранных исходных замечаний для Word-анализа оценки АР или актуализации. Исходник не изменяется.",
         {
             "type": "object",
             "properties": {
@@ -478,6 +564,7 @@ class MCPServer:
             project = app.projects.load(args["slug"])
             mode = args["mode"]
             errors, warnings = app.projects.validate(project, require_ready=False)
+            history = app.runs.project_history(args["slug"])
             # Return one revision even if the shared instructions are edited
             # while this response is being assembled.
             snapshot = app.knowledge.snapshot_for_mode(mode)
@@ -494,6 +581,7 @@ class MCPServer:
                 "available_task_variants": {
                     "full_execution": "Полная проверка с AutoCAD",
                     "analysis_word": "Анализ и задание в Word",
+                    "object_norms": "Нормы для объекта (использовать с mode=compliance)",
                 },
                 "instructions_ready": not snapshot.instructions_pending,
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
@@ -502,23 +590,55 @@ class MCPServer:
                 "rules": snapshot.context,
                 "quality_control": quality_control,
                 "normative_status": app.norms.status(),
+                "project_history": {
+                    "run_count": len(history["runs"]),
+                    "by_work_kind": {
+                        kind: [{"run_id": entry["run_id"], "work_iteration": entry["work_iteration"],
+                                "result_complete": entry["result_complete"], "registry_file": entry["registry_file"]}
+                               for entry in entries]
+                        for kind, entries in history["by_work_kind"].items()
+                    },
+                    "recent_runs": [{key: entry.get(key) for key in
+                                     ("run_id", "work_iteration", "created_at", "work_kind", "result_complete", "gpzu", "knowledge_digest",
+                                      "plan_revision", "findings_count", "registry_file")}
+                                    for entry in history["runs"][:10]],
+                    "history_file": str(app.projects.project_dir(args["slug"]) / "ИСТОРИЯ_ОЦЕНОК.json"),
+                },
             }
         if name == "create_project":
             return app.projects.create(args["name"], args.get("slug") or None)
         if name == "save_project":
             return app.projects.save(args["slug"], args["project"])
+        if name == "add_project_change":
+            return app.projects.add_change(
+                args["slug"], event_date=args["event_date"], category=args.get("category"),
+                categories=args.get("categories"),
+                description=args["description"], affected_scope=args.get("affected_scope", ""),
+                source_reference=args["source_reference"], impact_notes=args.get("impact_notes", ""))
         if name == "create_run":
-            return app.runs.create(args["slug"], args["mode"], args.get("task_variant", "full_execution"))
+            return app.runs.create(args["slug"], args["mode"], args.get("task_variant", "full_execution"),
+                                   plan_change_status=args.get("plan_change_status"),
+                                   plan_change_note=args.get("plan_change_note", ""))
         if name == "list_runs":
             return app.runs.list_runs(args["slug"])
+        if name == "get_project_history":
+            return app.runs.project_history(args["slug"])
         if name == "get_run":
             return app.runs.load(args["slug"], args["run_id"])
+        if name == "capture_barrier_source_remarks":
+            return app.runs.capture_barrier_source_remarks(args["slug"], args["run_id"])
+        if name == "record_barrier_source_decisions":
+            return app.runs.record_barrier_source_decisions(
+                args["slug"], args["run_id"], args["decisions"], args.get("none_found_reason"),
+                args.get("delete_decision_ids"))
         if name == "record_semantic_blocks":
             return app.runs.record_semantic_blocks(args["slug"], args["run_id"], args["blocks"])
         if name == "get_finding_template":
             return read_json(app.paths.templates / "finding_template.json", {})
         if name == "record_finding":
             return app.runs.add_finding(args["slug"], args["run_id"], args["finding"])
+        if name == "record_continuity":
+            return app.runs.record_continuity(args["slug"], args["run_id"], args["items"])
         if name == "record_quality_control":
             return app.runs.record_quality_control(args["slug"], args["run_id"], args["quality"])
         if name == "validate_run":

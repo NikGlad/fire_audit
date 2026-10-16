@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 import sys
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import app as gui_module
 
@@ -59,6 +60,17 @@ def main():
             gui.refresh_runs(); gui.run_tree.selection_set(run["run"]["run_id"])
             assert Path(run["quality_file"]).is_file()
             assert "AUTOM8LABS" in Path(run["task_file"]).read_text(encoding="utf-8")
+            assert gui.task_variant_values["Нормы для объекта"] == "object_norms"
+            gui.task_variant_var.set("Нормы для объекта")
+            gui.mode_var.set("Этапизация")
+            with patch.object(gui_module.messagebox, "showinfo"), patch.object(gui_module.messagebox, "showerror") as error:
+                gui.create_run()
+            error.assert_not_called()
+            newest = gui.app.runs.list_runs("ui-test")[0]
+            assert newest["task_variant"] == "object_norms"
+            assert newest["mode"] == "compliance"
+            assert newest["mode_label"] == "Нормы для объекта"
+            assert "НОРМЫ_ДЛЯ_ОБЪЕКТА.docx" in gui.run_info.get("1.0", "end") or "Нормы для объекта" in gui.run_info.get("1.0", "end")
             print("GUI smoke OK:", ", ".join(titles))
         finally:
             gui.destroy()

@@ -163,9 +163,13 @@
     "Координаты, длины выносок, номера помещений, AutoCAD-id и другие фактические значения определять заново для каждого объекта."
   ],
   "stair_enclosure_rule": {
-    "id": "stair_enclosures_not_drawn_separately",
+    "id": "stairwalls_table21_draw_all_projects_20261015",
     "scope": "all_projects_barrier_scheme_drawing_convention",
-    "draw_separate_enclosure": false,
+    "draw_separate_enclosure": true,
+    "required_rating_source": "Таблица 21 № 123-ФЗ по установленной степени огнестойкости; специальные требования проверять отдельно.",
+    "one_line_per_shared_boundary": true,
+    "stronger_independent_requirements_preserved": true,
+    "external_walls_only_for_applicable_addressed_requirements": true,
     "independent_door_and_window_rules_unchanged": true
   },
   "completion_rules": {

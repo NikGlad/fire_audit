@@ -149,15 +149,63 @@ class ChatHandoffTests(unittest.TestCase):
                 task = Path(result['task_file']).read_text(encoding='utf-8')
                 self.assertEqual(run['workflow'], 'assistant_analysis_word_report')
                 self.assertEqual(run['task_variant_label'], 'Анализ и задание в Word')
-                self.assertFalse(run['hard_constraints']['autocad_actions_enabled'])
+                source_selection = mode in {'compliance', 'actualization_protocol'}
+                self.assertEqual(run['hard_constraints']['autocad_actions_enabled'], source_selection)
+                self.assertEqual(run['hard_constraints']['source_remark_selection_word_only'], source_selection)
+                self.assertEqual(run['hard_constraints']['save_separate_result_dwg'], source_selection)
                 self.assertTrue(run['hard_constraints']['word_report_required'])
-                self.assertIn('не изменяй, не удаляй и не сохраняй объекты AutoCAD', task)
+                if source_selection:
+                    self.assertIn('внешняя зелёная пометка', task)
+                    self.assertEqual(run['hard_constraints']['source_remark_selection_numbering'],
+                                     'consecutive_selected_source_groups_excluding_stage')
+                    self.assertIn('Номера замечаний этапизации в этот ряд не включай', task)
+                    self.assertIn('либо новое подлежащее выдаче замечание с рабочим', task)
+                    self.assertIn('внутренние красные и фиолетовые цвета', task)
+                    self.assertIn('что конкретно нарушено', task)
+                    self.assertIn('зарегистрируй копию через `record_result_dwg`', task)
+                    if mode == 'actualization_protocol':
+                        self.assertIn('реестр всех ранее выданных замечаний проверяемого объёма', task)
+                        self.assertIn('существующий номер на плане', task)
+                        self.assertIn('дополнительно выявленные места нарушения', task)
+                        self.assertIn('Не присваивай этим группам рабочие номера', task)
+                    else:
+                        self.assertNotIn('реестр всех ранее выданных замечаний проверяемого объёма', task)
+                else:
+                    self.assertEqual(run['hard_constraints']['source_remark_selection_numbering'], 'none')
+                    self.assertIn('Не создавай, не изменяй, не удаляй и не сохраняй объекты AutoCAD', task)
                 self.assertIn('ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx', task)
                 self.assertIn('готовый текст замечания или запроса', task)
                 self.assertIn('render_docx.py', task)
                 self.assertIn('record_word_report', task)
-                self.assertNotIn('зарегистрируй итоговый DWG через `record_result_dwg`', task)
+                if not source_selection:
+                    self.assertNotIn('зарегистрируй копию через `record_result_dwg`', task)
                 self.assertIn('===== 24_ДВА_ВИДА_ЗАДАНИЯ.md =====', task)
+
+    def test_ar_and_actualization_word_register_marked_copy_without_touching_source(self):
+        source = self.root / 'source.dwg'
+        source.write_bytes(b'source fixture')
+        project = self.app.projects.load('other')
+        project['dwg']['path'] = str(source)
+        self.app.projects.save('other', project)
+        for mode in ('compliance', 'actualization_protocol'):
+            with self.subTest(mode=mode):
+                result = self.create_run(mode, 'analysis_word')
+                run = result['run']
+                self.assertTrue(run['hard_constraints']['create_result_copy_before_writes'])
+                self.assertIn('не зарегистрирована отдельная проверенная копия DWG',
+                              ' '.join(self.app.runs.validate('other', run['run_id'], for_application=True)['errors']))
+                marked = source.with_name(f'{source.stem}__{mode}__{run["run_id"]}.dwg')
+                marked.write_bytes(b'marked copy fixture')
+                self.addCleanup(marked.unlink)
+                actions = self.app.runs.record_result_dwg(
+                    'other', run['run_id'], str(marked),
+                    source_document_contains_results=False,
+                    copy_did_not_change_open_source_identity=True,
+                )
+                self.assertTrue(actions['result_copy_created'])
+                self.assertEqual(source.read_bytes(), b'source fixture')
+                self.assertNotIn('не зарегистрирована отдельная проверенная копия DWG',
+                                 ' '.join(self.app.runs.validate('other', run['run_id'], for_application=True)['errors']))
 
     def test_analysis_word_report_has_separate_completion_control(self):
         result = self.create_run('stage', 'analysis_word')
@@ -190,6 +238,85 @@ class ChatHandoffTests(unittest.TestCase):
                 source_document_contains_results=False,
                 copy_did_not_change_open_source_identity=True,
             )
+
+    def test_object_norms_task_is_project_scoped_read_only_and_clause_specific(self):
+        result = self.create_run('compliance', 'object_norms')
+        run = result['run']
+        task = Path(result['task_file']).read_text(encoding='utf-8')
+        self.assertEqual(run['mode_label'], 'Нормы для объекта')
+        self.assertEqual(run['hard_constraints']['word_report_filename'], 'НОРМЫ_ДЛЯ_ОБЪЕКТА.docx')
+        self.assertFalse(run['hard_constraints']['autocad_actions_enabled'])
+        self.assertFalse(run['hard_constraints']['save_separate_result_dwg'])
+        self.assertNotIn('Создать отдельную копию результата', task)
+        self.assertIn('пункта/части', task)
+        self.assertIn('перечню Росстандарта № 2594', task)
+        self.assertIn('===== 28_НОРМЫ_ДЛЯ_ОБЪЕКТА.md =====', task)
+        self.assertIn('НОРМЫ_ДЛЯ_ОБЪЕКТА.docx', task)
+        self.assertIn('Нормы для объекта', self.app.runs.list_runs('other')[0]['mode_label'])
+        handoff = self.app.runs.chat_handoff('other', run['run_id'])
+        self.assertIn('AutoCAD используй только для чтения', handoff['text'])
+        self.assertTrue(handoff['rules_intact'])
+        self.assertNotIn('Не зарегистрирован полный перечень исходных замечаний',
+                         self.app.runs.validate('other', run['run_id'], for_application=True)['errors'])
+
+        report = Path(result['folder']) / 'НОРМЫ_ДЛЯ_ОБЪЕКТА.docx'
+        report.write_bytes(b'PK synthetic docx fixture')
+        recorded = self.app.runs.record_word_report(
+            'other', run['run_id'], str(report), rendered_page_count=1,
+            visual_review_complete=True, source_dwg_unchanged=True,
+        )
+        self.assertEqual(recorded['status'], 'complete')
+        from fire_audit.runs import WORD_QUALITY_CHECKS
+        self.app.runs.record_quality_control('other', run['run_id'], {
+            'checks': {name: True for name in WORD_QUALITY_CHECKS},
+            'created_or_changed_entity_ids': [], 'unresolved': [],
+        })
+        self.assertTrue(self.app.runs.validate('other', run['run_id'], for_application=True)['ok'])
+        with self.assertRaisesRegex(ValueError, 'итоговый DWG не создаётся'):
+            self.app.runs.record_result_dwg(
+                'other', run['run_id'], str(report.with_suffix('.dwg')),
+                source_document_contains_results=False,
+                copy_did_not_change_open_source_identity=True,
+            )
+
+    def test_object_norms_rejects_other_work_mode(self):
+        with self.assertRaisesRegex(ValueError, 'отдельное задание'):
+            self.create_run('stage', 'object_norms')
+
+    def test_object_norms_dropdown_creates_chat_task_for_selected_project(self):
+        from app import FireAuditGUI
+        gui = SimpleNamespace(
+            current_slug='other', app=self.app,
+            _update_project_from_form=Mock(return_value=self.app.projects.load('other')),
+            mode_values={'Этапизация': 'stage'}, mode_var=Mock(),
+            task_variant_values={'Нормы для объекта': 'object_norms'}, task_variant_var=Mock(),
+            refresh_runs=Mock(), run_tree=Mock(), run_info=Mock(),
+            clipboard_clear=Mock(), clipboard_append=Mock(), update_idletasks=Mock(),
+        )
+        gui.mode_var.get.return_value = 'Этапизация'
+        gui.task_variant_var.get.return_value = 'Нормы для объекта'
+        with patch('app.messagebox.showinfo') as info, patch('app.messagebox.showerror') as error:
+            FireAuditGUI.create_run(gui)
+        error.assert_not_called()
+        info.assert_called_once()
+        newest = self.app.runs.list_runs('other')[0]
+        self.assertEqual(newest['task_variant'], 'object_norms')
+        self.assertEqual(newest['mode'], 'compliance')
+        self.assertIn('Нормы для объекта', gui.clipboard_append.call_args.args[0])
+
+    def test_object_norms_uses_only_selected_project_snapshot(self):
+        first = self.create_run('compliance', 'object_norms')
+        second_project = self.app.projects.create('Особый объект Б', 'second-object')
+        second_project['dates']['gpzu'] = '2025-05-14'
+        self.app.projects.save('second-object', second_project)
+        second = self.app.runs.create('second-object', 'compliance', 'object_norms')
+        first_task = Path(first['task_file']).read_text(encoding='utf-8')
+        second_task = Path(second['task_file']).read_text(encoding='utf-8')
+        self.assertIn('2026-04-23', first_task)
+        self.assertNotIn('Особый объект Б', first_task)
+        self.assertIn('Особый объект Б', second_task)
+        self.assertIn('2025-05-14', second_task)
+        self.assertNotIn('2026-04-23', second_task)
 
     def test_editable_instruction_activates_mode_without_code_change(self):
         path = self.root / 'knowledge' / '11_АКТУАЛИЗАЦИЯ.md'
