@@ -55,6 +55,35 @@ class RunRuleSnapshotTests(unittest.TestCase):
         else:
             self.assertIn('room_classification.json', names)
 
+    def test_barrier_sequence_approval_in_both_task_variants_and_projects(self):
+        for slug in ('first', 'second'):
+            for variant in ('full_execution', 'analysis_word'):
+                with self.subTest(slug=slug, variant=variant):
+                    result = self.app.runs.create(slug, 'barrier_assessment', task_variant=variant)
+                    self.assert_consistent_artifacts(result)
+                    constraints = result['run']['hard_constraints']
+                    self.assertTrue(constraints['barrier_sequence_user_approval_before_stage1'])
+                    self.assertTrue(constraints['barrier_stage_all_plans_all_floors_before_next'])
+                    self.assertTrue(constraints['barrier_missing_data_blocks_next_stage'])
+                    self.assertEqual(constraints['barrier_fixed_first_five_stages'], [
+                        'fire_compartment_walls_REI150', 'stu', 'source_explanation_remarks',
+                        'lift_shafts_and_halls', 'categorized_rooms'])
+                    self.assertEqual(constraints['barrier_categories_before_sequence_approval'],
+                                     variant == 'full_execution')
+                    task = Path(result['task_file']).read_text(encoding='utf-8-sig')
+                    self.assertIn('32_ПОСЛЕДОВАТЕЛЬНОСТЬ_ОЦЕНКИ_ПРЕГРАД.md', task)
+                    self.assertIn('ОБЯЗАТЕЛЬНАЯ ОСТАНОВКА', task)
+                    self.assertIn('ПОСЛЕДОВАТЕЛЬНОСТЬ_НАНЕСЕНИЯ_ПРЕГРАД.docx', task)
+                    rules = (Path(result['folder']) / 'ПРАВИЛА_ЗАПУСКА.md').read_text(encoding='utf-8-sig')
+                    self.assertIn('barrier_sequence_all_floors_with_word_approval_20261017', rules)
+                    self.assertNotIn('Продолжать до конца проверку всех остальных границ и конструкций.', rules)
+                    quality = Path(result['quality_file']).read_text(encoding='utf-8-sig')
+                    self.assertIn('явно согласован до этапа 1', quality)
+                    self.assertIn('каждый этап закрыт на всех планах', quality)
+        other = self.app.runs.create('first', 'compliance')
+        self.assertNotIn('barrier_sequence_user_approval_before_stage1', other['run']['hard_constraints'])
+        self.assertNotIn('ОБЯЗАТЕЛЬНАЯ ОСТАНОВКА', Path(other['task_file']).read_text(encoding='utf-8-sig'))
+
     def test_all_modes_freeze_one_snapshot_for_two_independent_objects(self):
         for mode in MODE_LABELS:
             with self.subTest(mode=mode):
