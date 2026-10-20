@@ -16,7 +16,7 @@
     {
       "key": "wall_2",
       "name": "Противопожарная стена 2-го типа (REI 45)",
-      "color_index": 30
+      "color_index": 140
     },
     {
       "key": "partition_1",
@@ -26,7 +26,7 @@
     {
       "key": "partition_2",
       "name": "Противопожарная перегородка 2-го типа (EI 15)",
-      "color_index": 5
+      "color_index": 23
     },
     {
       "key": "rated_partition_30",
@@ -37,6 +37,36 @@
       "key": "corridor_REI15",
       "name": "Ограждение общего коридора (R)EI(W) 15, К0",
       "color_index": 94
+    },
+    {
+      "key": "ordinary_lift",
+      "name": "Ограждение шахты обычного лифта EI 45; заполнение проёмов шахты по самостоятельному условию",
+      "color_index": 90
+    },
+    {
+      "key": "fire_lift",
+      "name": "Ограждение шахты лифта для пожарных REI 120",
+      "color_index": 1
+    },
+    {
+      "key": "stairs",
+      "name": "Внутренние стены лестничных клеток REI 90",
+      "color_index": 30
+    },
+    {
+      "key": "NT",
+      "name": "Ограждение зоны НТ REI 60; двери EIS 60 / EIWS 60",
+      "color_index": 170
+    },
+    {
+      "key": "medical",
+      "name": "Медицинские помещения: ограждение REI (EI) 60; заполнения не ниже 2-го типа",
+      "color_index": 11
+    },
+    {
+      "key": "interward",
+      "name": "Перегородки между палатами EI 45 К0; без самостоятельного нормирования заполнений по этому основанию",
+      "color_index": 121
     }
   ],
   "category": {
@@ -160,7 +190,8 @@
     "Цвета существующих типов брать из рабочей рамки рядом с исходными планами; при расхождении с этим профилем фиксировать расхождение и применять утверждённую рамку текущего объекта.",
     "Для нового типа преграды назначить новый отличимый цвет, добавить пояснение в рамку и применять его единообразно на всех планах текущего объекта.",
     "Вес только линий самих противопожарных преград и их образцов в легенде — 50. Для лучей цвет, тип линии и вес строго ByLayer; вес 50 для лучей запрещён.",
-    "Координаты, длины выносок, номера помещений, AutoCAD-id и другие фактические значения определять заново для каждого объекта."
+    "Координаты, длины выносок, номера помещений, AutoCAD-id и другие фактические значения определять заново для каждого объекта.",
+    "При совпадении отображаемого RGB у разных характеристик сначала устранить коллизию по color_policy, затем синхронизировать все относящиеся рамки и планы."
   ],
   "stair_enclosure_rule": {
     "id": "stairwalls_table21_draw_all_projects_20261015",
@@ -189,6 +220,27 @@
     "escape_route_full_contour_includes_toilet_and_sanitary_boundaries": true,
     "legend_keys_must_equal_actually_drawn_barrier_keys": true,
     "all_repeated_legend_frames_must_match": true,
-    "unused_legend_rows_must_be_removed_from_result_copy": true
+    "unused_legend_rows_must_be_removed_from_result_copy": true,
+    "barrier_colors_unique_by_resolved_rgb": true,
+    "barrier_characteristic_color_table_required": true,
+    "barrier_plan_and_all_legend_colors_must_match": true
+  },
+  "color_policy": {
+    "id": "barrier_unique_characteristic_colors_20261021",
+    "version": 1,
+    "distinct_characteristics_require_unique_colors": true,
+    "characteristic_fields": [
+      "construction_type",
+      "fire_resistance_symbols_and_minutes",
+      "fire_hazard_class",
+      "opening_fill_requirements",
+      "smoke_gas_tightness"
+    ],
+    "same_characteristics_same_color_across_all_plans_and_legends": true,
+    "uniqueness_comparison": "resolved_RGB",
+    "visually_distinct_colors_required": true,
+    "existing_legend_collisions_must_be_corrected": true,
+    "plan_and_legend_sample_colors_must_match": true,
+    "color_only_revision_preserves_geometry_text_and_normative_decisions": true
   }
 }

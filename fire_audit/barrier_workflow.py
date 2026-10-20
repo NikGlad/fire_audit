@@ -31,6 +31,29 @@ VENT_CHAMBER_QUERY = (
 INTERFLOOR_BELT_RULE = "sp2_5_4_18_interfloor_belts"
 
 
+def legend_color_errors(entries):
+    """Check displayed ACI colours, including different indices with equal RGB."""
+    errors = []
+    keys = [entry.get("key") for entry in entries]
+    if len(set(keys)) != len(keys):
+        errors.append("Легенда содержит повторяющиеся типы")
+    displayed = {}
+    for entry in entries:
+        index = entry.get("color_index")
+        if type(index) is not int or not 1 <= index <= 255 or not entry.get("name"):
+            errors.append("В легенде нужны название конструкции и явный цвет 1–255")
+            continue
+        rgb = tuple(library().colors.aci2rgb(index))
+        if rgb in displayed:
+            errors.append(
+                f"Легенда содержит одинаковые цвета разных типов: "
+                f"{displayed[rgb]} и {entry.get('key')} (RGB {rgb})"
+            )
+        else:
+            displayed[rgb] = entry.get("key")
+    return errors
+
+
 def is_vent_chamber(name):
     value = " ".join(str(name or "").casefold().replace("ё", "е").split())
     compact = value.replace(" ", "").replace(".", "")
@@ -113,12 +136,8 @@ def validate_plan(plan, project):
         errors.append("Идентификаторы элементов должны быть заполнены и уникальны")
     by_id = {i.get("id"): i for i in items}
     legend = {i.get("key"): i for i in plan.get("legend", [])}
-    colors = [i.get("color_index") for i in legend.values()]
-    if len(legend) != len(plan.get("legend", [])) or len(colors) != len(set(colors)):
-        errors.append("Легенда содержит повторяющиеся типы или одинаковые цвета разных типов")
+    errors.extend(legend_color_errors(plan.get("legend", [])))
     for entry in legend.values():
-        if type(entry.get("color_index")) is not int or not 1 <= entry["color_index"] <= 255 or not entry.get("name"):
-            errors.append("В легенде нужны название конструкции и явный цвет 1–255")
         if not entry.get("source_handles") and not any(i.get("kind")=="legend" and i.get("legend_key")==entry["key"] for i in items):
             errors.append(f"{entry.get('key')}: нет исходной строки легенды или новой строки для нанесения")
         if refers_to_interfloor_belt(entry):
