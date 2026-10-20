@@ -68,6 +68,11 @@ class RunRuleSnapshotTests(unittest.TestCase):
                     self.assertTrue(constraints['barrier_sequence_category_reconciliation_summary_required'])
                     self.assertTrue(constraints['barrier_sequence_algorithm_without_room_addresses'])
                     self.assertTrue(constraints['barrier_sequence_all_outputs_and_queries_required'])
+                    self.assertTrue(constraints['barrier_sequence_applicability_before_word_required'])
+                    self.assertTrue(constraints['barrier_sequence_each_item_applicability_required'])
+                    self.assertTrue(constraints['barrier_sequence_not_required_items_skip_execution'])
+                    self.assertEqual(constraints['barrier_sequence_applicability_statuses'],
+                                     ['required', 'not_required', 'needs_clarification'])
                     self.assertEqual(constraints['barrier_fixed_first_five_stages'], [
                         'fire_compartment_walls_REI150', 'stu', 'source_explanation_remarks',
                         'lift_shafts_and_halls', 'categorized_rooms'])
@@ -80,6 +85,10 @@ class RunRuleSnapshotTests(unittest.TestCase):
                     rules = (Path(result['folder']) / 'ПРАВИЛА_ЗАПУСКА.md').read_text(encoding='utf-8-sig')
                     self.assertIn('barrier_sequence_all_floors_with_word_approval_20261017', rules)
                     self.assertIn('barrier_sequence_general_algorithm_and_category_reconciliation_20261019', rules)
+                    self.assertIn('barrier_sequence_item_applicability_before_word_20261020', rules)
+                    self.assertIn('Актуальность для объекта', rules)
+                    self.assertIn('Требуется / Не требуется / Требует уточнения', task)
+                    self.assertIn('Одного отсутствия стен на плане недостаточно', rules)
                     self.assertIn('Сверка не завершена', rules)
                     self.assertIn('без привязки к конкретным помещениям', task)
                     self.assertNotIn('все охватываемые этажи, планы, помещения/оси, границы и фрагменты', rules)
@@ -89,6 +98,7 @@ class RunRuleSnapshotTests(unittest.TestCase):
                     self.assertIn('каждый этап закрыт на всех планах', quality)
                     self.assertIn('итог сверки номеров и наименований', quality)
                     self.assertIn('выноски к перекрытиям, дверям, окнам, воротам, шторам', quality)
+                    self.assertIn('До формирования Word проанализирована необходимость каждого пункта', quality)
         other = self.app.runs.create('first', 'compliance')
         self.assertNotIn('barrier_sequence_user_approval_before_stage1', other['run']['hard_constraints'])
         self.assertNotIn('ОБЯЗАТЕЛЬНАЯ ОСТАНОВКА', Path(other['task_file']).read_text(encoding='utf-8-sig'))
