@@ -39,11 +39,6 @@
       "color_index": 94
     },
     {
-      "key": "ordinary_lift",
-      "name": "Ограждение шахты обычного лифта EI 45; заполнение проёмов шахты по самостоятельному условию",
-      "color_index": 90
-    },
-    {
       "key": "fire_lift",
       "name": "Ограждение шахты лифта для пожарных REI 120",
       "color_index": 1
@@ -62,11 +57,6 @@
       "key": "medical",
       "name": "Медицинские помещения: ограждение REI (EI) 60; заполнения не ниже 2-го типа",
       "color_index": 11
-    },
-    {
-      "key": "interward",
-      "name": "Перегородки между палатами EI 45 К0; без самостоятельного нормирования заполнений по этому основанию",
-      "color_index": 121
     }
   ],
   "category": {
@@ -223,11 +213,15 @@
     "unused_legend_rows_must_be_removed_from_result_copy": true,
     "barrier_colors_unique_by_resolved_rgb": true,
     "barrier_characteristic_color_table_required": true,
-    "barrier_plan_and_all_legend_colors_must_match": true
+    "barrier_plan_and_all_legend_colors_must_match": true,
+    "single_legend_row_per_color_equivalence_group": true,
+    "communication_shafts_EI45_include_corridor_faces": true,
+    "firelift_hall_smoke_tight_door_callouts_required": true,
+    "door_callout_scope_follows_user_floor_scope": true
   },
   "color_policy": {
-    "id": "barrier_unique_characteristic_colors_20261021",
-    "version": 1,
+    "id": "barrier_unified_EI45_color_group_20261021",
+    "version": 2,
     "distinct_characteristics_require_unique_colors": true,
     "characteristic_fields": [
       "construction_type",
@@ -241,6 +235,52 @@
     "visually_distinct_colors_required": true,
     "existing_legend_collisions_must_be_corrected": true,
     "plan_and_legend_sample_colors_must_match": true,
-    "color_only_revision_preserves_geometry_text_and_normative_decisions": true
+    "color_only_revision_preserves_geometry_text_and_normative_decisions": true,
+    "approved_equivalence_groups_take_priority": true
+  },
+  "color_equivalence_groups": [
+    {
+      "canonical_key": "partition_1",
+      "color_index": 6,
+      "members": [
+        "partition_1",
+        "ordinary_lift",
+        "interward",
+        "communication_shaft"
+      ],
+      "legend_name": "Противопожарная перегородка 1-го типа EI 45",
+      "opening_fill": "Заполнение проёмов 2-го типа:\nдвери, ворота, люки EI 30;\nпри остеклении дверей >25% — EIW 30;\nокна E 30 (неоткрывающиеся).",
+      "preserve_independent_opening_and_K0_requirements": true
+    }
+  ],
+  "retired_separate_color_rows": [
+    {
+      "key": "ordinary_lift",
+      "name": "Ограждение шахты обычного лифта EI 45; заполнение проёмов шахты по самостоятельному условию",
+      "color_index": 90
+    },
+    {
+      "key": "interward",
+      "name": "Перегородки между палатами EI 45 К0; без самостоятельного нормирования заполнений по этому основанию",
+      "color_index": 121
+    }
+  ],
+  "communication_shaft_rule": {
+    "draw_all_identified": true,
+    "color_group": "partition_1",
+    "corridor_side_required": true,
+    "stronger_shared_boundary_preserved_once": true,
+    "geometry_must_be_source_confirmed": true
+  },
+  "firelift_hall_door_callout_rule": {
+    "required_for_independent_requirement": true,
+    "target": "hall_entrance_door_not_lift_shaft_door",
+    "doors": "EIS30/EIWS30; retain EIS60/EIWS60 where independently required",
+    "minimum_specific_smoke_gas_resistance": "1.96e5 m3/kg",
+    "scope": "user_authorized_floors_only",
+    "all_leader_properties_by_layer": true,
+    "condition": "no_MGN_safety_zone_in_front_of_fire_lift",
+    "MGN_zone_must_be_confirmed_from_plan_and_schedule": true,
+    "basement_included_when_fire_lift_present": true
   }
 }

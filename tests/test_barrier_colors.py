@@ -21,6 +21,16 @@ class BarrierColorTests(unittest.TestCase):
         self.assertEqual(legend_color_errors(profile["legend"]), [])
         self.assertTrue(profile["color_policy"]["distinct_characteristics_require_unique_colors"])
         self.assertTrue(profile["completion_rules"]["barrier_colors_unique_by_resolved_rgb"])
+        group = profile["color_equivalence_groups"][0]
+        self.assertEqual(group["canonical_key"], "partition_1")
+        self.assertEqual(group["color_index"], 6)
+        self.assertTrue({"ordinary_lift", "interward", "communication_shaft"}.issubset(group["members"]))
+        self.assertFalse({"ordinary_lift", "interward"}.intersection(r["key"] for r in profile["legend"]))
+
+    def test_separate_EI45_subtype_rows_are_rejected_even_with_unique_colors(self):
+        for key in ("ordinary_lift", "interward", "communication_shaft"):
+            errors = legend_color_errors([dict(key=key, name="EI 45", color_index=90)])
+            self.assertTrue(any("единой строкой" in e for e in errors))
 
     def test_plan_validation_blocks_aliased_color(self):
         plan = fixture_plan("SOURCE")
@@ -43,4 +53,5 @@ class BarrierColorSnapshotTests(unittest.TestCase):
                      "barrier_plan_and_all_legend_colors_must_match"):
             self.assertTrue(result["run"]["hard_constraints"][flag])
         rules = (Path(result["folder"]) / "ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8")
-        self.assertIn("barrier_unique_characteristic_colors_20261021", rules)
+        self.assertIn("barrier_unified_EI45_color_group_20261021", rules)
+        self.assertTrue(result["run"]["hard_constraints"]["firelift_hall_door_callout_when_no_MGN_zone"])

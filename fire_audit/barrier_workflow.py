@@ -39,6 +39,11 @@ def legend_color_errors(entries):
         errors.append("Легенда содержит повторяющиеся типы")
     displayed = {}
     for entry in entries:
+        if entry.get("key") in {"ordinary_lift", "interward", "communication_shaft"}:
+            errors.append(
+                f"{entry.get('key')}: объединить обозначение EI 45 с единой строкой "
+                "partition_1 фиолетового цвета; отдельная строка легенды не допускается"
+            )
         index = entry.get("color_index")
         if type(index) is not int or not 1 <= index <= 255 or not entry.get("name"):
             errors.append("В легенде нужны название конструкции и явный цвет 1–255")
