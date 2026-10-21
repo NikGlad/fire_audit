@@ -270,7 +270,10 @@
     "color_group": "partition_1",
     "corridor_side_required": true,
     "stronger_shared_boundary_preserved_once": true,
-    "geometry_must_be_source_confirmed": true
+    "geometry_must_be_source_confirmed": true,
+    "actual_AR_wall_faces_take_priority_over_hatch_voids": true,
+    "unverified_diagonal_or_closing_edges_forbidden": true,
+    "incomplete_source_enclosure_requires_addressed_AR_query": true
   },
   "firelift_hall_door_callout_rule": {
     "required_for_independent_requirement": true,
