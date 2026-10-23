@@ -227,7 +227,13 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 require(transition.get("planned_only") is True,
                         f"{label}: Word-задание должно отличать планируемый переход от выполненного")
             else:
-                require(transition_ids <= changed | created,
+                # Keeping an unanswered group on its existing active layer is
+                # a reviewed status, not a CAD mutation of every old object.
+                journal_required = transition_ids
+                if kind == "no_answer":
+                    journal_required = {h for h in transition_ids
+                                        if before.get(h, {}).get("layer") != TRANSITION_LAYERS[kind]}
+                require(journal_required <= changed | created,
                         f"{label}: переход всей группы не совпадает с журналом изменений")
             for handle in transition_ids:
                 layer = TRANSITION_LAYERS[kind]
@@ -436,6 +442,14 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 if key in before.get(handle, {}):
                     require(entity.get(key) == before[handle][key],
                             f"{handle}: изменены свойства исходного объекта без протокольного перехода")
+            continue
+        # An existing answer embedded in an unchanged source MText must keep
+        # the source object's formatting. Author colours are checked above
+        # against the actual inline spans, independently of these properties.
+        baseline = before.get(handle, {})
+        if (handle not in changed | created and baseline.get("layer") == layer
+                and all(key in baseline and entity.get(key) == baseline[key]
+                        for key in ("colorIndex", "linetype", "lineWeight"))):
             continue
         require(entity.get("linetype") == "ByLayer" and entity.get("lineWeight") == "ByLayer",
                 f"{handle}: протокольный перенос должен сохранять тип и вес линии ByLayer")

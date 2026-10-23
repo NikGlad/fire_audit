@@ -92,6 +92,43 @@ class ProtocolValidationTests(unittest.TestCase):
             registry["protocol"]["items"][0]["plan"]["physical_status"] = "insufficient_data"
         return registry
 
+
+    def test_unchanged_embedded_response_keeps_original_properties(self):
+        registry = self.fixture("none")
+        item = registry["protocol"]["items"][0]
+        item["response"].update(kind="information", claims_fixed=False,
+                                text="Уточнены исходные данные", entity_ids=["T"])
+        item["transition"] = {"kind": "none", "entity_ids": [],
+                              "evidence": {"reason": "Исходное оформление сохранено",
+                                           "response_kind": "information"}}
+        registry["changed_entity_ids"] = []
+        registry["created_entity_ids"] = ["P"]
+        registry["verified_graphics"] = [e for e in registry["verified_graphics"] if e["handle"] != "C"]
+        for e in registry["verified_graphics"]:
+            e["layer"] = ACTIVE
+        for e in registry["graphics_before"] + registry["verified_graphics"]:
+            if e["handle"] == "T":
+                e.update(colorIndex=3, lineWeight="LineWeight000")
+        registry["protocol"]["text_color_checks"][0]["entity_id"] = "T"
+        self.assertValid(registry)
+        next(e for e in registry["verified_graphics"] if e["handle"] == "T")["lineWeight"] = "LineWeight050"
+        self.assertInvalid(registry)
+
+    def test_unchanged_unanswered_active_group_is_reviewed_not_reformatted(self):
+        registry = self.missing_fixture()
+        registry["changed_entity_ids"] = []
+        for e in registry["graphics_before"] + registry["verified_graphics"]:
+            if e["handle"] != "P":
+                e["lineWeight"] = "LineWeight000"
+        self.assertValid(registry)
+        next(e for e in registry["verified_graphics"] if e["handle"] == "P")["lineWeight"] = "LineWeight000"
+        self.assertInvalid(registry)
+
+    def test_actual_transfer_still_requires_bylayer_properties(self):
+        registry = self.fixture()
+        next(e for e in registry["verified_graphics"] if e["handle"] == "T")["lineWeight"] = "LineWeight000"
+        self.assertInvalid(registry)
+
     def test_standalone_commitment_has_protocol_layer_without_physical_resolution(self):
         registry = self.fixture()
         self.assertValid(registry)
