@@ -311,7 +311,10 @@
     "all_ray_properties_by_layer": true,
     "no_fabricated_measurement_when_openings_unknown": true,
     "STU_alternatives_from_current_project_only": true,
-    "unrelated_common_route_clause_in_standard_facade_callout": false
+    "unrelated_common_route_clause_in_standard_facade_callout": false,
+    "actual_rendered_dimension_text_fit_and_manual_location_required": true,
+    "ray_end_outside_rendered_dimension_text_bounds": true,
+    "theoretical_dimension_line_point_is_not_text_target": true
   },
   "cabinet_wall_rule": {
     "route": "actual_inner_constructive_sides_behind_recess",
