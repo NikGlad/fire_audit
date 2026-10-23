@@ -413,6 +413,18 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertIn("Алгоритм этого вида проверки ещё не передан", context)
         self.assertIn("14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md", context)
         self.assertNotIn("===== 11_АКТУАЛИЗАЦИЯ.md =====", context)
+        actualization_context = self.app.knowledge.context_for_mode("actualization_protocol")
+        self.assertFalse(self.app.knowledge.instructions_pending("actualization_protocol"))
+        section_title = "## Протокол отдельно и в составе актуализации"
+        protocol_text = self.app.knowledge.load_document("16_ПРОТОКОЛ.md").text
+        actualization_text = self.app.knowledge.load_document("11_АКТУАЛИЗАЦИЯ.md").text
+        def shared_section(text):
+            return text.split(section_title, 1)[1].split("\n## ", 1)[0].strip()
+        self.assertEqual(shared_section(protocol_text), shared_section(actualization_text))
+        for mode_context in (context, actualization_context):
+            self.assertIn("только ответы заказчика без изменения планов", mode_context)
+            self.assertIn("пояснение пожарного консультанта", mode_context)
+            self.assertIn("вносить в обе инструкции", mode_context)
         protocol = self.app.runs.create("test", "protocol")
         actualization = self.app.runs.create("test", "actualization_protocol")
         self.assertNotEqual(protocol["folder"], actualization["folder"])
