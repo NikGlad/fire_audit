@@ -217,7 +217,14 @@
     "single_legend_row_per_color_equivalence_group": true,
     "communication_shafts_EI45_include_corridor_faces": true,
     "firelift_hall_smoke_tight_door_callouts_required": true,
-    "door_callout_scope_follows_user_floor_scope": true
+    "door_callout_scope_follows_user_floor_scope": true,
+    "facade_callouts_rays_and_dimensions_on_output_layer": true,
+    "facade_rays_target_actual_corresponding_dimensions": true,
+    "stair_volume_shaft_exception_reviewed": true,
+    "recessed_cabinet_wall_route_reviewed": true,
+    "basement_common_stair_dividers_reviewed": true,
+    "unexplained_hooks_and_duplicate_segments_resolved": true,
+    "current_customer_edits_preserved": true
   },
   "color_policy": {
     "id": "barrier_unified_EI45_color_group_20261021",
@@ -273,7 +280,12 @@
     "geometry_must_be_source_confirmed": true,
     "actual_AR_wall_faces_take_priority_over_hatch_voids": true,
     "unverified_diagonal_or_closing_edges_forbidden": true,
-    "incomplete_source_enclosure_requires_addressed_AR_query": true
+    "incomplete_source_enclosure_requires_addressed_AR_query": true,
+    "stair_volume_exception": true,
+    "stair_internal_separation_requires_independent_basis": true,
+    "stair_enclosure_includes_outer_boundary_behind_shafts": true,
+    "cabinet_access_front_not_corridor_line": true,
+    "cabinet_and_shaft_classification_requires_plan_geometry": true
   },
   "firelift_hall_door_callout_rule": {
     "required_for_independent_requirement": true,
@@ -285,5 +297,45 @@
     "condition": "no_MGN_safety_zone_in_front_of_fire_lift",
     "MGN_zone_must_be_confirmed_from_plan_and_schedule": true,
     "basement_included_when_fire_lift_present": true
+  },
+  "facade_annotation_rule": {
+    "layer": "экспертиза противопожарные преграды",
+    "dimension_target_required": true,
+    "target": "verified_dimension_near_dimension_number",
+    "dimension_parameter_must_match_callout": true,
+    "reuse_current_valid_dimensions": true,
+    "one_ray_start_per_note_per_floor": true,
+    "ray_type": "Line",
+    "all_ray_properties_by_layer": true,
+    "no_fabricated_measurement_when_openings_unknown": true,
+    "STU_alternatives_from_current_project_only": true,
+    "unrelated_common_route_clause_in_standard_facade_callout": false
+  },
+  "cabinet_wall_rule": {
+    "route": "actual_inner_constructive_sides_behind_recess",
+    "retain_boundary_performance_and_color": true,
+    "ordinary_corridor_line_across_access_front": false,
+    "independent_opening_requirements_preserved": true
+  },
+  "basement_common_stair_divider_rule": {
+    "condition": "basement_exit_through_common_stair_with_separate_exit_outside",
+    "construction": "blind_partition_type_1_EI45",
+    "basis": [
+      "123-FZ_article_89_part_4",
+      "SP1_4.2.2_applicable_edition"
+    ],
+    "check_actual_separated_volumes_and_exit_level": true,
+    "stronger_independent_boundary_preserved": true
+  },
+  "geometry_closeout_rule": {
+    "fresh_customer_edits_must_be_reconciled": true,
+    "check_all_authorized_floors": true,
+    "each_free_end_requires_physical_or_documented_basis": true,
+    "no_unexplained_hooks": true,
+    "no_zero_length_or_backtracking_segments": true,
+    "no_duplicate_shared_boundary": true,
+    "partial_overlap_requires_partial_correction": true,
+    "near_parallel_different_walls_are_not_duplicates": true,
+    "fresh_native_readback_and_visual_check_required": true
   }
 }
