@@ -285,7 +285,9 @@
     "stair_internal_separation_requires_independent_basis": true,
     "stair_enclosure_includes_outer_boundary_behind_shafts": true,
     "cabinet_access_front_not_corridor_line": true,
-    "cabinet_and_shaft_classification_requires_plan_geometry": true
+    "cabinet_and_shaft_classification_requires_plan_geometry": true,
+    "stair_common_volume_requires_actual_wall_thickness_and_connection": true,
+    "room_bounding_box_does_not_define_shaft_width": true
   },
   "firelift_hall_door_callout_rule": {
     "required_for_independent_requirement": true,
@@ -315,7 +317,9 @@
     "route": "actual_inner_constructive_sides_behind_recess",
     "retain_boundary_performance_and_color": true,
     "ordinary_corridor_line_across_access_front": false,
-    "independent_opening_requirements_preserved": true
+    "independent_opening_requirements_preserved": true,
+    "actual_steps_thin_returns_and_columns_required": true,
+    "open_leaf_or_text_bounding_box_is_not_recess_boundary": true
   },
   "basement_common_stair_divider_rule": {
     "condition": "basement_exit_through_common_stair_with_separate_exit_outside",
@@ -336,6 +340,10 @@
     "no_duplicate_shared_boundary": true,
     "partial_overlap_requires_partial_correction": true,
     "near_parallel_different_walls_are_not_duplicates": true,
-    "fresh_native_readback_and_visual_check_required": true
+    "fresh_native_readback_and_visual_check_required": true,
+    "include_manual_line_and_polyline_barriers": true,
+    "preserve_arc_geometry_in_comparisons": true,
+    "source_column_outlines_reviewed_with_walls": true,
+    "column_geometry_does_not_prove_required_fire_resistance": true
   }
 }
