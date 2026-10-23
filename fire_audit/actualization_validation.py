@@ -6,6 +6,7 @@ from pathlib import PureWindowsPath
 from typing import Any
 
 from .protocol_validation import protocol_validation_state, authorized_comment_correction
+from .source_text_revisions import authorized_source_text_revisions
 
 
 RESOLVED_LAYER = "экспертиза устранено"
@@ -290,6 +291,8 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
             errors.append("Слой устранённых нарушений должен иметь цвет ACI 3")
         for key in ("project_geometry_unchanged", "original_texts_and_numbers_unchanged",
                     "excluded_frame_unchanged", "no_entities_deleted", "changes_re_read"):
+            if key in {"original_texts_and_numbers_unchanged", "excluded_frame_unchanged"} and authorized_source_text_revisions(registry):
+                continue
             if key == "no_entities_deleted" and authorized_comment_correction(registry):
                 continue
             if layer_check.get(key) is not True:
