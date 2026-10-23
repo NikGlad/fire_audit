@@ -465,7 +465,7 @@ class FireAuditGUI(tk.Tk):
             "Этапизация": "stage",
             "Оценка соответствия АР": "compliance",
             "Часть 3 статьи 89": "article89",
-            "Актуализация": "actualization_protocol",
+            "Актуализация + протокол": "actualization_protocol",
             "Перенос оценки АР": "ar_assessment_transfer",
             "Подготовка планов АР": "ar_plan_preparation",
             "Сравнение планов АР": "ar_plan_comparison",
@@ -500,7 +500,7 @@ class FireAuditGUI(tk.Tk):
         self.run_tree.heading("plans", text="Планы")
         self.run_tree.heading("status", text="Статус")
         self.run_tree.heading("created", text="Создан")
-        self.run_tree.column("mode", width=170)
+        self.run_tree.column("mode", width=220)
         self.run_tree.column("iteration", width=75)
         self.run_tree.column("variant", width=210)
         self.run_tree.column("plans", width=110)

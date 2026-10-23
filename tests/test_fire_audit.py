@@ -309,7 +309,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertIn("экспертиза устранено", context)
         result = self.app.runs.create("test", "actualization_protocol")
         run = result["run"]
-        self.assertEqual(run["mode_label"], "Актуализация")
+        self.assertEqual(run["mode_label"], "Актуализация + протокол")
         self.assertTrue(run["hard_constraints"]["workflow_instructions_ready"])
         self.assertTrue(run["hard_constraints"]["autocad_actions_enabled"])
         self.assertFalse(run["hard_constraints"]["actualization_existing_findings_only"])
@@ -406,7 +406,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.create_ready_project()
         self.assertEqual(parser().parse_args(["create-run", "test", "protocol"]).mode, "protocol")
         self.assertEqual(MODE_LABELS["protocol"], "Протокол")
-        self.assertEqual(MODE_LABELS["actualization_protocol"], "Актуализация")
+        self.assertEqual(MODE_LABELS["actualization_protocol"], "Актуализация + протокол")
         self.assertIn("protocol", PENDING_INSTRUCTION_MODES)
         context = self.app.knowledge.context_for_mode("protocol")
         self.assertIn("16_ПРОТОКОЛ.md", context)
@@ -1578,23 +1578,24 @@ class FireAuditTestCase(unittest.TestCase):
         run_id = result["run"]["run_id"]
         run_path = Path(result["folder"]) / "run.json"
         legacy = read_json(run_path)
-        legacy["mode_label"] = "Актуализация и протокол"
+        legacy["mode_label"] = "Актуализация"
         write_json(run_path, legacy)
         paths = [run_path, Path(result["registry_file"]), Path(result["task_file"])]
         original = {path: path.read_bytes() for path in paths}
         loaded = self.app.runs.load("test", run_id)
-        self.assertEqual(loaded["run"]["mode_label"], "Актуализация")
+        self.assertEqual(loaded["run"]["mode_label"], "Актуализация + протокол")
         self.assertEqual(loaded["run"]["run_id"], run_id)
         self.assertEqual(loaded["run"]["mode"], "actualization_protocol")
         listed = self.app.runs.list_runs("test")
-        self.assertEqual(listed[0]["mode_label"], "Актуализация")
+        self.assertEqual(listed[0]["mode_label"], "Актуализация + протокол")
         self.assertEqual(listed[0]["run_id"], run_id)
         self.assertEqual(original, {path: path.read_bytes() for path in paths})
-        self.assertIn("# Полное задание: Актуализация\n", paths[2].read_text(encoding="utf-8"))
+        self.assertIn("# Полное задание: Актуализация + протокол\n", paths[2].read_text(encoding="utf-8"))
         names = {row["name"] for row in self.app.knowledge.inventory()}
         self.assertIn("11_АКТУАЛИЗАЦИЯ.md", names)
         self.assertNotIn("11_АКТУАЛИЗАЦИЯ_И_ПРОТОКОЛ.md", names)
         self.assertNotIn("Актуализация и протокол", SERVER_INSTRUCTIONS)
+        self.assertIn("Актуализация + протокол", SERVER_INSTRUCTIONS)
         for mode in MODE_FILES:
             self.assertNotIn("актуализация и протокол", self.app.knowledge.context_for_mode(mode).lower())
 
