@@ -218,7 +218,7 @@
     "communication_shafts_EI45_include_corridor_faces": true,
     "firelift_hall_smoke_tight_door_callouts_required": true,
     "door_callout_scope_follows_user_floor_scope": true,
-    "facade_callouts_rays_and_dimensions_on_output_layer": true,
+    "facade_callouts_rays_and_dimensions_on_output_layer": false,
     "facade_rays_target_actual_corresponding_dimensions": true,
     "stair_volume_shaft_exception_reviewed": true,
     "recessed_cabinet_wall_route_reviewed": true,
@@ -226,7 +226,10 @@
     "unexplained_hooks_and_duplicate_segments_resolved": true,
     "current_customer_edits_preserved": true,
     "all_dimension_labels_numeric_mm_only": true,
-    "internal_stair_shafts_EI45_and_full_outer_enclosure_reviewed": true
+    "internal_stair_shafts_EI45_and_full_outer_enclosure_reviewed": true,
+    "facade_callouts_rays_on_output_layer": true,
+    "only_ray_target_dimensions_on_output_layer": true,
+    "all_other_working_dimensions_on_explanation_layer": true
   },
   "color_policy": {
     "id": "barrier_unified_EI45_color_group_20261021",
@@ -320,7 +323,11 @@
     "unrelated_common_route_clause_in_standard_facade_callout": false,
     "actual_rendered_dimension_text_fit_and_manual_location_required": true,
     "ray_end_outside_rendered_dimension_text_bounds": true,
-    "theoretical_dimension_line_point_is_not_text_target": true
+    "theoretical_dimension_line_point_is_not_text_target": true,
+    "dimension_layer_condition": "at_least_one_verified_ray_targets_this_dimension",
+    "dimensions_without_ray_layer": "экспертиза противопожарные преграды пояснения",
+    "ray_dimension_link_registry_required": true,
+    "recheck_dimension_layer_when_ray_added_or_removed": true
   },
   "cabinet_wall_rule": {
     "route": "actual_inner_constructive_sides_behind_recess",
@@ -368,5 +375,14 @@
     "retain_extension_points_and_dimension_line": true,
     "check_style_prefix_and_suffix": true,
     "retarget_rays_after_actual_text_fit": true
+  },
+  "dimension_layer_rule": {
+    "scope": "working_barrier_assessment_dimensions",
+    "with_verified_ray": "экспертиза противопожарные преграды",
+    "without_verified_ray": "экспертиза противопожарные преграды пояснения",
+    "bidirectional_link_check_required": true,
+    "geometric_proximity_alone_does_not_prove_link": true,
+    "preserve_geometry_text_style_and_entity_properties": true,
+    "working_dimensions_in_explanation_layer_are_not_original_expertise_remarks": true
   }
 }
