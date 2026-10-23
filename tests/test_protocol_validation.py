@@ -10,6 +10,64 @@ from tests import test_actualization_validation as actualization_tests
 
 
 class ProtocolValidationTests(unittest.TestCase):
+    def silent_fixture(self, kind="accepted_response"):
+        r = self.fixture()
+        i = r["protocol"]["items"][0]
+        i["consultant"].update(comment_required=False, omission_reason="accepted_response", entity_ids=[])
+        i["transition"]["kind"] = kind
+        i["transition"]["entity_ids"].remove("P")
+        r["created_entity_ids"].remove("P")
+        r["verified_graphics"] = [e for e in r["verified_graphics"] if e["handle"] != "P"]
+        r["protocol"]["text_color_checks"] = r["protocol"]["text_color_checks"][:1]
+        r["protocol"]["accepted_responses_without_comments"] = True
+        if kind == "accepted_response":
+            i["response"]["kind"] = "information"
+            i["transition"]["evidence"].update(response_kind="information", no_remaining_issue_in_scope=True)
+            i["plan"].update(checkability="not_checkable", physical_status="insufficient_data")
+        return r
+
+    def test_accepted_response_without_comment_keeps_internal_decision(self):
+        self.assertValid(self.silent_fixture())
+        self.assertValid(self.actualization_fixture(self.silent_fixture()))
+        self.assertValid(self.silent_fixture("accepted_commitment"))
+
+    def test_silent_acceptance_does_not_cover_partial_missing_or_unresolved(self):
+        for mutation in ("partial", "missing", "unresolved", "coverage", "comment"):
+            r = self.silent_fixture()
+            i = r["protocol"]["items"][0]
+            if mutation == "partial": i["consultant"]["decision"] = "partially_accepted"
+            if mutation == "missing": i["response"]["status"] = "missing"
+            if mutation == "unresolved": i["plan"].update(checkability="checkable", physical_status="unresolved")
+            if mutation == "coverage": i["transition"]["evidence"]["covers_all_requirements"] = False
+            if mutation == "comment": i["consultant"]["entity_ids"] = ["P"]
+            with self.subTest(mutation=mutation): self.assertInvalid(r)
+
+    def test_preserve_explicit_source_properties_on_layer_only_transfer(self):
+        r = self.silent_fixture()
+        r["protocol"]["preserve_source_properties_ids"] = ["T"]
+        for e in r["graphics_before"] + r["verified_graphics"]:
+            if e["handle"] == "T": e["lineWeight"] = "LineWeight000"
+        self.assertValid(r)
+        next(e for e in r["verified_graphics"] if e["handle"] == "T")["lineWeight"] = "LineWeight050"
+        self.assertInvalid(r)
+
+    def test_only_authorized_assistant_confirmation_can_be_removed(self):
+        r = self.silent_fixture()
+        r["graphics_layer_check"]["no_entities_deleted"] = False
+        r["deleted_entity_ids"] = ["OLD"]
+        r["comment_correction"] = {"user_authorized": True, "user_instruction": "Убрать подтверждение согласия",
+            "previous_registry_reference": "previous.json", "removed_comments": [{"entity_id": "OLD", "main_text_id": "T",
+                "created_by_assistant": True, "removed_verified": True,
+                "before": {"handle": "OLD", "type": "MText", "contents": "23.10.2026 пояснения пожарного консультанта: Принято"}}]}
+        self.assertValid(r)
+        self.assertValid(self.actualization_fixture(r) | {"comment_correction": r["comment_correction"],
+            "deleted_entity_ids": ["OLD"]})
+        r["comment_correction"]["user_authorized"] = False
+        self.assertInvalid(r)
+        r["comment_correction"]["user_authorized"] = True
+        r["deleted_entity_ids"] = ["T"]
+        self.assertInvalid(r)
+
     def fixture(self, kind="accepted_commitment", mode="protocol"):
         entity = lambda handle, layer: {"handle": handle, "layer": layer, "colorIndex": 256,
                                         "linetype": "ByLayer", "lineWeight": "ByLayer"}

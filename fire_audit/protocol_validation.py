@@ -20,6 +20,7 @@ STU_PROTOCOL = "экспертиза СТУ протокол"
 EXPLANATIONS = "экспертиза пояснения"
 CLIENT_EXPLANATIONS = "экспертиза пояснения для заказчика"
 TRANSITION_LAYERS = {
+    "accepted_response": PROTOCOL_RESOLVED,
     "accepted_commitment": PROTOCOL_RESOLVED,
     "plan_resolved": RESOLVED,
     "rejected": ACTIVE,
@@ -47,6 +48,37 @@ def _date(value: Any) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def authorized_comment_correction(registry: dict[str, Any]) -> bool:
+    """Narrow exception for user-requested removal of assistant confirmations."""
+    record = _mapping(registry.get("comment_correction"))
+    removed = _ids(registry.get("deleted_entity_ids", []))
+    entries = record.get("removed_comments", [])
+    if not (record.get("user_authorized") is True and record.get("user_instruction")
+            and record.get("previous_registry_reference") and removed
+            and isinstance(entries, list) and len(entries) == len(removed)):
+        return False
+    items = _mapping(registry.get("protocol")).get("items", [])
+    source_ids = set().union(*(_ids(_mapping(i.get("source")).get("entity_ids", [])) for i in items))
+    current = {e.get("handle") for e in registry.get("verified_graphics", [])}
+    if removed & (source_ids | current):
+        return False
+    valid = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return False
+        old = _mapping(entry.get("before"))
+        handle = entry.get("entity_id")
+        if (entry.get("created_by_assistant") is not True or entry.get("removed_verified") is not True
+                or old.get("handle") != handle or old.get("type") != "MText"
+                or "пояснения пожарного консультанта:" not in old.get("contents", "")
+                or not any(_mapping(i.get("source")).get("main_text_id") == entry.get("main_text_id")
+                           and _mapping(i.get("consultant")).get("comment_required") is False
+                           and _mapping(i.get("consultant")).get("decision") == "accepted" for i in items)):
+            return False
+        valid.add(handle)
+    return valid == removed
 
 
 def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
@@ -184,7 +216,16 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 f"{label}: нет датированного решения пожарного консультанта")
         require(bool(consultant.get("remaining_actions")) and bool(consultant.get("basis")),
                 f"{label}: не указаны оставшиеся действия и основание решения")
-        if planned_only:
+        silent_acceptance = consultant.get("comment_required") is False
+        if protocol.get("accepted_responses_without_comments") is True and kind in {"accepted_response", "accepted_commitment"}:
+            require(silent_acceptance, f"{label}: принятый ответ оформляется переносом без подтверждающего комментария")
+        if silent_acceptance:
+            require(response_status == "received" and decision == "accepted"
+                    and kind in {"accepted_response", "accepted_commitment"}
+                    and consultant.get("omission_reason") == "accepted_response"
+                    and not consultant_ids,
+                    f"{label}: отсутствие комментария допустимо только для полностью принятого ответа с протокольным переносом")
+        elif planned_only:
             require(bool(consultant.get("word_reference")) and consultant.get("planned_inside_original_block") is True,
                     f"{label}: Word-задание не содержит адреса пояснения и его размещения внутри исходного блока")
         else:
@@ -305,7 +346,14 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                          verified.get(h, {}).get("layer")) not in {RESOLVED, PROTOCOL_RESOLVED} for h in source_ids),
                     f"{label}: полностью неустранённая группа не может сохраняться в слое устранения")
 
-        if kind == "accepted_commitment":
+        if kind == "accepted_response":
+            require(silent_acceptance and response_status == "received" and decision == "accepted"
+                    and evidence.get("response_kind") in {"information", "completed_correction", "disagreement"}
+                    and bool(evidence.get("accepted_solution")) and evidence.get("covers_all_requirements") is True
+                    and evidence.get("no_remaining_issue_in_scope") is True
+                    and physical not in {"unresolved", "partially_resolved"},
+                    f"{label}: снятие по ответу требует полного принятия без остатка в пределах исходного требования")
+        elif kind == "accepted_commitment":
             require(response_status == "received" and decision == "accepted"
                     and evidence.get("response_kind") in {"commitment", "corrective_scheme"}
                     and bool(evidence.get("accepted_solution")) and evidence.get("covers_all_requirements") is True,
@@ -447,7 +495,9 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         # the source object's formatting. Author colours are checked above
         # against the actual inline spans, independently of these properties.
         baseline = before.get(handle, {})
-        if (handle not in changed | created and baseline.get("layer") == layer
+        preserve_source_properties = (handle in _ids(protocol.get("preserve_source_properties_ids", []))
+                                      and handle in before and handle not in created)
+        if ((handle not in changed | created and baseline.get("layer") == layer or preserve_source_properties)
                 and all(key in baseline and entity.get(key) == baseline[key]
                         for key in ("colorIndex", "linetype", "lineWeight"))):
             continue
@@ -499,6 +549,8 @@ def validate_protocol_registry(registry: dict[str, Any], for_application: bool =
             errors.append("Протокол должен сохранять исходную нумерацию")
         for key in ("project_geometry_unchanged", "original_texts_and_numbers_unchanged",
                     "no_entities_deleted", "changes_re_read"):
+            if key == "no_entities_deleted" and authorized_comment_correction(registry):
+                continue
             if layer_check.get(key) is not True:
                 errors.append(f"Не подтверждена проверка протокола: {key}")
     if any(actions.get(key) for key in ("save_requested", "source_save_requested", "source_overwritten", "delete_requested")):
