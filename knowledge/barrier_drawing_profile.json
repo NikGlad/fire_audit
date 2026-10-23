@@ -224,7 +224,9 @@
     "recessed_cabinet_wall_route_reviewed": true,
     "basement_common_stair_dividers_reviewed": true,
     "unexplained_hooks_and_duplicate_segments_resolved": true,
-    "current_customer_edits_preserved": true
+    "current_customer_edits_preserved": true,
+    "all_dimension_labels_numeric_mm_only": true,
+    "internal_stair_shafts_EI45_and_full_outer_enclosure_reviewed": true
   },
   "color_policy": {
     "id": "barrier_unified_EI45_color_group_20261021",
@@ -281,13 +283,17 @@
     "actual_AR_wall_faces_take_priority_over_hatch_voids": true,
     "unverified_diagonal_or_closing_edges_forbidden": true,
     "incomplete_source_enclosure_requires_addressed_AR_query": true,
-    "stair_volume_exception": true,
-    "stair_internal_separation_requires_independent_basis": true,
+    "stair_volume_exception": false,
+    "stair_internal_separation_requires_independent_basis": false,
     "stair_enclosure_includes_outer_boundary_behind_shafts": true,
     "cabinet_access_front_not_corridor_line": true,
     "cabinet_and_shaft_classification_requires_plan_geometry": true,
     "stair_common_volume_requires_actual_wall_thickness_and_connection": true,
-    "room_bounding_box_does_not_define_shaft_width": true
+    "room_bounding_box_does_not_define_shaft_width": true,
+    "internal_stair_shaft_partition_EI45_required": true,
+    "internal_stair_shaft_color_index": 6,
+    "outer_stair_enclosure_complete_independently": true,
+    "internal_shaft_and_outer_stair_are_distinct_boundaries": true
   },
   "firelift_hall_door_callout_rule": {
     "required_for_independent_requirement": true,
@@ -348,5 +354,19 @@
     "preserve_arc_geometry_in_comparisons": true,
     "source_column_outlines_reviewed_with_walls": true,
     "column_geometry_does_not_prove_required_fire_resistance": true
+  },
+  "dimension_text_rule": {
+    "scope": "all_linear_measurements_all_objects",
+    "content": "numeric_value_only",
+    "units": "millimetres",
+    "unit_suffix": false,
+    "identifiers": false,
+    "prefixes": false,
+    "suffixes": false,
+    "explanations": false,
+    "retain_actual_measurement_and_style_precision": true,
+    "retain_extension_points_and_dimension_line": true,
+    "check_style_prefix_and_suffix": true,
+    "retarget_rays_after_actual_text_fit": true
   }
 }
