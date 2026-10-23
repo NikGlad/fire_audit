@@ -928,6 +928,9 @@ def validate_source_reading(finding: dict[str, Any]) -> list[str]:
 
 
 def validate_registry(registry: dict[str, Any], for_application: bool = False) -> dict[str, Any]:
+    if registry.get("mode") == "protocol":
+        from .protocol_validation import validate_protocol_registry
+        return validate_protocol_registry(registry, for_application=for_application)
     if registry.get("mode") == "actualization_protocol":
         from .actualization_validation import validate_actualization_registry
         return validate_actualization_registry(registry, for_application=for_application)

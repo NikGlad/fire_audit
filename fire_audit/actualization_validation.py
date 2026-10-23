@@ -5,6 +5,8 @@ from collections import Counter
 from pathlib import PureWindowsPath
 from typing import Any
 
+from .protocol_validation import protocol_validation_state
+
 
 RESOLVED_LAYER = "экспертиза устранено"
 RESOLVED_SOURCE_LAYERS = {RESOLVED_LAYER, "экспертиза устранено протокол"}
@@ -21,6 +23,11 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     actions = registry.get("dwg_actions", {})
     complete = bool(actions.get("work_completed"))
     strict = for_application or complete
+    protocol_state = protocol_validation_state(registry, strict=strict)
+    errors.extend(protocol_state["errors"])
+    warnings.extend(protocol_state["warnings"])
+    protocol_all_owned = protocol_state["owned_entity_ids"]
+    protocol_physical = protocol_state["physical_status_by_main_id"]
     findings = registry.get("findings", [])
     scope = registry.get("actualization_scope", {})
     additions = [item for item in findings if item.get("origin") == "new_group"]
@@ -69,13 +76,19 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     expected_active: set[str] = set()
     expected_explanations: set[str] = set()
     expected_blue: dict[str, str] = {}
-    owned_changes: set[str] = set()
+    owned_changes: set[str] = protocol_all_owned & (changed | created)
     added_keys: set[tuple[str, ...]] = set()
     for finding in findings:
         number = finding.get("original_number", "?")
         label = f"Замечание №{number}"
         status = finding.get("status")
         source = finding.get("source", {})
+        protocol_owned = protocol_state["owned_by_main_id"].get(source.get("main_text_id"), set())
+        protocol_layers = protocol_state["layers_by_main_id"].get(source.get("main_text_id"), {})
+        protocol_status = protocol_physical.get(source.get("main_text_id"))
+        if (protocol_status is not None and status in {"resolved", "partially_resolved", "unresolved", "insufficient_data"}
+                and protocol_status != status):
+            errors.append(f"{label}: фактический статус в протоколе не совпадает с проверкой планов")
         group_ids = {source.get(key) for key in ("main_text_id", "number_id", "frame_id")}
         group_ids.discard(None)
         source_layer = (source.get("original_layer") or before.get(source.get("main_text_id"), {}).get("layer")
@@ -83,7 +96,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         blue_group = source_layer in BLUE_STU_LAYERS
         if blue_group:
             for handle in group_ids | set(source.get("ray_ids", [])) | set(source.get("related_graphic_ids", [])):
-                if handle:
+                if handle and handle not in protocol_layers:
                     expected_blue[handle] = source_layer
         targets = finding.get("targets", [])
         new_group = finding.get("origin") == "new_group"
@@ -99,11 +112,15 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         if strict and status == "not_reviewed":
             errors.append(f"{label}: не проверено")
         if status == "excluded_fire_safety_frame":
-            if targets or finding.get("changed_entity_ids") or finding.get("created_entity_ids") or group_ids & changed or returned or reopened or new_group:
+            if (targets or (set(finding.get("changed_entity_ids", [])) | set(finding.get("created_entity_ids", []))
+                            | (group_ids & changed)) - protocol_owned or returned or reopened or new_group):
                 errors.append(f"{label}: исключённая группа не должна перепроверяться или изменяться")
+            if protocol_status is not None and protocol_status != "not_rechecked":
+                errors.append(f"{label}: протокол не должен выдавать исключённую рамку за перепроверенную")
             continue
         if status == "information_request":
-            if finding.get("changed_entity_ids") or finding.get("created_entity_ids") or group_ids & changed or returned or reopened or new_group or added_targets:
+            if ((set(finding.get("changed_entity_ids", [])) | set(finding.get("created_entity_ids", []))
+                 | (group_ids & changed)) - protocol_owned or returned or reopened or new_group or added_targets):
                 errors.append(f"{label}: информационный запрос нельзя закрывать зелёным как нарушение")
             continue
         if strict and not targets:
@@ -165,7 +182,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 target_ids.add(ray)
             if blue_group:
                 for handle in target_ids:
-                    if before.get(handle, {}).get("layer") in BLUE_STU_LAYERS:
+                    if before.get(handle, {}).get("layer") in BLUE_STU_LAYERS and handle not in protocol_layers:
                         expected_blue[handle] = source_layer
             if target.get("origin") == "added_target":
                 proof = target.get("evidence", {})
@@ -182,7 +199,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 if not finding.get("floor") or str(target.get("floor")) != str(finding.get("floor")) or str(dedup.get("floor")) != str(finding.get("floor")):
                     errors.append(f"{label}: новая цель и группа должны относиться к одному этажу")
                 if blue_group:
-                    expected_blue.update({handle: source_layer for handle in target_ids})
+                    expected_blue.update({handle: source_layer for handle in target_ids if handle not in protocol_layers})
                 else:
                     active_additions.update(target_ids)
             if strict and not target.get("reason"):
@@ -194,7 +211,8 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 returnable.update(target_ids)
                 if target_ids & returned != target_returned:
                     errors.append(f"{label}: возврат графики не зарегистрирован у неустранённой цели")
-                if strict and any(verified.get(h, {}).get("layer") in RESOLVED_SOURCE_LAYERS for h in target_ids):
+                if strict and any(verified.get(h, {}).get("layer") in RESOLVED_SOURCE_LAYERS
+                                  for h in target_ids - set(protocol_layers)):
                     errors.append(f"{label}: неустранённая цель осталась в слое устранения")
             elif target_returned:
                 errors.append(f"{label}: нельзя возвращать цель без установленного неустранения")
@@ -203,7 +221,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 if not evidence.get("project_entity_ids") or not evidence.get("method") or not evidence.get("result"):
                     errors.append(f"{label}: устранение не подтверждено проектными объектами и проверкой")
                 if not blue_group:
-                    expected_green.update(target_ids - shared_returned)
+                    expected_green.update(target_ids - shared_returned - set(protocol_layers))
             elif (target_ids & changed) - target_returned:
                 # Restoring an old STU ray from an erroneously green layer to its
                 # original blue group is a graphics correction, not a resolution
@@ -211,26 +229,28 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 corrected_blue = {handle for handle in target_ids & changed
                                   if blue_group and verified.get(handle, {}).get("layer") == source_layer
                                   and before.get(handle, {}).get("layer") in RESOLVED_SOURCE_LAYERS}
-                if ((target_ids & changed) - target_returned) - corrected_blue:
+                if ((target_ids & changed) - target_returned) - corrected_blue - protocol_owned:
                     errors.append(f"{label}: изменена графика неподтверждённой цели")
         finding_changes = set(finding.get("changed_entity_ids", []))
         finding_created = set(finding.get("created_entity_ids", []))
         owned_changes.update(finding_changes | finding_created)
-        expected_active.update(active_additions)
-        expected_explanations.update(explanation_ids)
-        expected_green.update((finding_changes | finding_created) - returned - reopened - active_additions - explanation_ids - set(expected_blue))
+        expected_active.update(active_additions - protocol_owned)
+        expected_explanations.update(explanation_ids - protocol_owned)
+        expected_green.update((finding_changes | finding_created) - returned - reopened - active_additions - explanation_ids
+                              - set(expected_blue) - protocol_owned)
         expected_returned.update(returned)
         if not reopened <= finding_changes or not active_additions <= finding_created or not explanation_ids <= finding_changes | finding_created:
             errors.append(f"{label}: дополнения не совпадают с журналом группы")
         if not returned <= finding_changes & returnable:
             errors.append(f"{label}: возвращённые объекты не относятся к изменённой графике группы")
         if status == "resolved" and not blue_group:
-            expected_green.update(group_ids)
-        elif not blue_group and (group_ids & changed) - returned - reopened:
+            expected_green.update(group_ids - set(protocol_layers))
+        elif not blue_group and (group_ids & changed) - returned - reopened - protocol_owned:
             errors.append(f"{label}: незакрытая группа целиком переведена в устранённые")
         elif (not blue_group and strict and status != "resolved"
               and not (source_layer in RESOLVED_SOURCE_LAYERS and not group_ids & changed)
-              and any(verified.get(handle, {}).get("layer") in {None, *RESOLVED_SOURCE_LAYERS} for handle in group_ids)):
+              and any(verified.get(handle, {}).get("layer") in {None, *RESOLVED_SOURCE_LAYERS}
+                      for handle in group_ids - set(protocol_layers))):
             errors.append(f"{label}: нет подтверждения действующего слоя незакрытой группы")
         if not finding_changes <= changed or not finding_created <= created:
             errors.append(f"{label}: изменения не совпадают с общим журналом")

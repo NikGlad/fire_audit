@@ -399,7 +399,7 @@ class FireAuditTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.app.projects.save("test", project)
 
-    def test_protocol_is_separate_and_waits_for_instructions(self) -> None:
+    def test_protocol_is_ready_separate_and_shares_approved_rules(self) -> None:
         from cli import parser
         from fire_audit.runs import MODE_LABELS, PENDING_INSTRUCTION_MODES
 
@@ -410,7 +410,8 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertIn("protocol", PENDING_INSTRUCTION_MODES)
         context = self.app.knowledge.context_for_mode("protocol")
         self.assertIn("16_ПРОТОКОЛ.md", context)
-        self.assertIn("Алгоритм этого вида проверки ещё не передан", context)
+        self.assertNotIn("Алгоритм этого вида проверки ещё не передан", context)
+        self.assertFalse(self.app.knowledge.instructions_pending("protocol"))
         self.assertIn("14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md", context)
         self.assertNotIn("===== 11_АКТУАЛИЗАЦИЯ.md =====", context)
         actualization_context = self.app.knowledge.context_for_mode("actualization_protocol")
@@ -425,20 +426,64 @@ class FireAuditTestCase(unittest.TestCase):
             self.assertIn("только ответы заказчика без изменения планов", mode_context)
             self.assertIn("пояснение пожарного консультанта", mode_context)
             self.assertIn("вносить в обе инструкции", mode_context)
+            for rule in ("замечание осталось без внимания", "экспертиза лифты для пожарных",
+                         "Даты и размещение ответов", "Последующие протоколы и актуализации",
+                         "text_color_checks", "плана тушения пожара"):
+                self.assertIn(rule, mode_context)
         protocol = self.app.runs.create("test", "protocol")
         actualization = self.app.runs.create("test", "actualization_protocol")
         self.assertNotEqual(protocol["folder"], actualization["folder"])
         self.assertNotEqual(protocol["registry_file"], actualization["registry_file"])
         run = protocol["run"]
         self.assertEqual(run["mode_label"], "Протокол")
-        self.assertFalse(run["hard_constraints"]["workflow_instructions_ready"])
-        self.assertFalse(run["hard_constraints"]["autocad_actions_enabled"])
-        self.assertEqual(self.app.runs.load("test", run["run_id"])["registry"]["findings"], [])
+        self.assertTrue(run["hard_constraints"]["workflow_instructions_ready"])
+        self.assertTrue(run["hard_constraints"]["autocad_actions_enabled"])
+        self.assertTrue(run["hard_constraints"]["protocol_review_required"])
+        registry = self.app.runs.load("test", run["run_id"])["registry"]
+        self.assertEqual(registry["findings"], [])
+        self.assertTrue(registry["protocol"]["required"])
+        self.assertEqual(registry["protocol"]["items"], [])
+        self.assertTrue(actualization["run"]["hard_constraints"]["protocol_review_required"])
         task = Path(protocol["task_file"]).read_text(encoding="utf-8")
-        self.assertIn("не выполнять проверку, не составлять протокол, не изменять и не сохранять DWG", task)
+        self.assertIn("датированное пояснение", task)
+        self.assertNotIn("Режим пока не активирован", task)
         result = self.app.runs.validate("test", run["run_id"], for_application=True)
         self.assertFalse(result["ok"])
-        self.assertTrue(any("алгоритм ещё не утверждён" in e for e in result["errors"]))
+        self.assertFalse(any("алгоритм ещё не утверждён" in e for e in result["errors"]))
+
+    def test_protocol_word_variants_validate_decisions_without_enabling_cad(self) -> None:
+        from unittest.mock import patch
+
+        self.create_ready_project()
+        for mode in ("protocol", "actualization_protocol"):
+            with self.subTest(mode=mode):
+                created = self.app.runs.create("test", mode, task_variant="analysis_word")
+                # Actualization retains its narrow source-group selection in a
+                # copy; standalone protocol Word must never enable CAD edits.
+                self.assertEqual(created["run"]["hard_constraints"]["autocad_actions_enabled"],
+                                 mode == "actualization_protocol")
+                with patch("fire_audit.protocol_validation.validate_protocol_analysis_registry",
+                           return_value={"ok": False, "errors": ["protocol decision incomplete"], "warnings": []}) as validate:
+                    result = self.app.runs.validate("test", created["run"]["run_id"], for_application=True)
+                validate.assert_called_once()
+                self.assertTrue(validate.call_args.kwargs["for_application"])
+                self.assertEqual(validate.call_args.args[0]["mode"], mode)
+                self.assertIn("protocol decision incomplete", result["errors"])
+
+    def test_new_actualization_cannot_disable_required_protocol(self) -> None:
+        self.create_ready_project()
+        created = self.app.runs.create("test", "actualization_protocol")
+        registry_path = Path(created["registry_file"])
+        original = read_json(registry_path)
+        for section in (None, {"required": False, "items": [], "scope_main_text_ids": []}):
+            registry = copy.deepcopy(original)
+            if section is None:
+                registry.pop("protocol")
+            else:
+                registry["protocol"] = section
+            write_json(registry_path, registry)
+            result = self.app.runs.validate("test", created["run"]["run_id"], for_application=True)
+            self.assertIn("Нельзя отключить обязательную протокольную часть нового задания", result["errors"])
 
     def test_du_mode_waits_for_its_algorithm(self) -> None:
         from cli import parser

@@ -133,7 +133,7 @@ MODE_STEPS = {
         "Выполнить единую оценку изменённых мест и всех последствий по применимым правилам оценки соответствия АР; перед выдачей исключить совпадения с уже выданными местами и требованиями.",
         "В составе актуализации каждый ответ заказчика сопоставить с исходным замечанием и относящимся планом, проанализировать содержание и желаемый результат. В пояснении пожарного консультанта по каждому ответу указать, принимается ли ответ, что осталось выполнить и на каком основании; сохранить связь с замечанием и планом по протокольной части инструкции актуализации. При поступлении только ответов без новых планов использовать самостоятельный вид работы «Протокол» по его отдельной инструкции.",
         "Новые места подходящего замечания дополнить лучами и доказательной графикой в слое экспертиза; в пояснении пожарного консультанта указать добавленные места. Для нового требования или другого этажа копировать полную утверждённую группу без перенумерации прежних замечаний.",
-        "Подтверждённо устранённые лучи и связанную графику перевести в зелёный слой «экспертиза устранено»; всю группу переводить только после устранения всех относящихся нарушений.",
+        "Фактически устранённые цели переводить по доказательствам; отдельно применить специальные протокольные переходы, включая обещание устранить, отсутствие ответа и последующие циклы. Переносить весь относящийся комплект по инструкции, не смешивая фактический статус со слоем и сохраняя авторские цвета ACI 4/30.",
         "Сохранить исходные номера, тексты и историю; записать индивидуальные доказательства, открытые вопросы и повторно считанные свойства в реестр.",
     ],
     "ar_assessment_transfer": [
@@ -157,8 +157,12 @@ MODE_STEPS = {
     "protocol": [
         "Закрепить выбранный объект без изменений исходных материалов.",
         "Загрузить отдельную инструкцию режима «Протокол», не подменяя её инструкцией «Актуализация + протокол».",
-        "Если инструкция ещё не заполнена пользователем, остановить работу: не выполнять проверку, не составлять протокол, не изменять и не сохранять DWG.",
-        "После получения инструкции выполнять только утверждённую последовательность этого режима и вести отдельный реестр запуска.",
+        "Установить полный охват выданных замечаний и пояснений, версии имеющихся планов, все ответы заказчика и историю предыдущих протоколов; не запускать сплошную проверку неизменённых планов.",
+        "Каждый ответ сопоставить с исходным замечанием и планом. Дать датированное пояснение: принимается ли ответ, что осталось выполнить и на каком основании; при частичном устранении перечислить все оставшиеся места.",
+        "Отработать отсутствие ответов и последующие циклы по инструкции. Фактический статус нарушения хранить отдельно от протокольного решения и слоя; проверить основания каждого перехода.",
+        "Внести подтверждённые сведения об объекте и обозначения, подготовить сообщение руководителю при выборе СТУ, расчёта риска или плана тушения пожара для сохраняющегося замечания.",
+        "В варианте с DWG разместить ответы и комментарии внутри исходных групп в закреплённой копии: заказчик ACI 4, консультант ACI 30. Переносить полный относящийся комплект, сохраняя исходник, номера, историю и проектную геометрию.",
+        "Проверить полный охват, даты, размещение, слои, авторские цвета и отсутствие наложений; повторно считать изменённые объекты. В варианте Word выдать адресный протокол без изменений DWG. Сохранить доказательства и ограничения в отдельном реестре запуска.",
     ],
     "barrier_assessment": [
         "Подготовка этапа 0: закрепить DWG и все проверяемые планы, этажи и фрагменты; прочитать паспорт, утверждённую таблицу, СТУ, замечания и ответы заказчика; использовать копию по общему правилу сохранения.",
@@ -379,6 +383,13 @@ class RunStore:
                 "workflow_instructions_ready": not instructions_pending,
                 "autocad_actions_enabled": cad_result and not instructions_pending,
                 **({
+                    "protocol_review_required": True,
+                    "protocol_response_color": 4,
+                    "protocol_consultant_color": 30,
+                    "protocol_dated_comments_inside_original_group": True,
+                    "protocol_physical_status_separate_from_layer": True,
+                } if mode in {"protocol", "actualization_protocol"} else {}),
+                **({
                     "actualization_existing_findings_only": False,
                     "actualization_unified_review": True,
                     "actualization_deduplicate_existing_targets": True,
@@ -444,6 +455,9 @@ class RunStore:
             registry["actualization_scope"] = {"unified_review_required": True,
                                                "issued_main_text_ids": [], "required_review_keys": []}
             registry["new_plan_review"] = {"items": []}
+        if mode in {"protocol", "actualization_protocol"}:
+            registry["protocol"] = {"required": True, "scope_main_text_ids": [],
+                                    "items": [], "text_color_checks": []}
         if mode == BARRIER_MODE:
             profile = next((json.loads(doc.text) for doc in knowledge_snapshot.documents
                             if doc.name == "barrier_drawing_profile.json"), {})
@@ -1039,8 +1053,21 @@ class RunStore:
                 errors.append("Для Word-анализа оценки АР или актуализации не зарегистрирована отдельная проверенная копия DWG с отбором исходных замечаний")
             result = {"ok": not errors, "errors": errors, "warnings": [],
                       "graphics_layer_check": loaded["registry"].get("graphics_layer_check", {})}
+            if loaded["run"].get("mode") in {"protocol", "actualization_protocol"}:
+                from .protocol_validation import validate_protocol_analysis_registry
+                protocol_result = validate_protocol_analysis_registry(
+                    loaded["registry"], for_application=for_application)
+                result["errors"].extend(protocol_result["errors"])
+                result["warnings"].extend(protocol_result.get("warnings", []))
+                result["ok"] = not result["errors"]
         else:
             result = validate_registry(loaded["registry"], for_application=for_application)
+        if ((for_application or loaded["registry"].get("dwg_actions", {}).get("work_completed"))
+                and loaded["run"].get("hard_constraints", {}).get("protocol_review_required")):
+            protocol_section = loaded["registry"].get("protocol")
+            if not isinstance(protocol_section, dict) or protocol_section.get("required") is not True:
+                result["ok"] = False
+                result.setdefault("errors", []).append("Нельзя отключить обязательную протокольную часть нового задания")
         if loaded["run"].get("mode") == BARRIER_MODE:
             result["errors"].extend(source_errors)
             profile = read_json(self.paths.knowledge / "barrier_drawing_profile.json", {})
