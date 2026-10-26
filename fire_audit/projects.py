@@ -298,6 +298,4 @@ class ProjectStore:
             and not str(geometry.get("floor_to_ceiling_height_m") or "").strip()
         ):
             warnings.append("Для здания Ф5 не заполнена высота от пола до потолка")
-        if not dwg.get("path"):
-            warnings.append("Путь к DWG не заполнен; его потребуется закрепить перед AutoCAD-операциями")
         return errors, warnings

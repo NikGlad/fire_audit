@@ -7,6 +7,7 @@ from pathlib import Path
 from .barrier_remarks import new_source_remarks, source_remarks_errors, inventory_digest
 from .barrier_remarks_capture import capture_source_layer
 from .io_utils import read_json, write_json, utc_now, sha256_file
+from .dwg_selection import resolved_source_path
 
 INVENTORY_FILE = "ИСТОЧНИКИ_ЗАМЕЧАНИЙ_ПП.json"
 BASELINE_FILE = "ОРИГИНАЛ_ЗАМЕЧАНИЙ_ПП.json"
@@ -55,7 +56,7 @@ def stored_errors(run, registry, folder):
         errors.append("Не подтверждено актуальное чтение слоя пояснений: " + str(record["refresh_error"]))
     if inventory.get("run_id") != run.get("run_id"):
         errors.append("Снимок замечаний слоя относится к другому запуску или не закреплён")
-    expected = str(run.get("project_snapshot", {}).get("dwg", {}).get("path", "")).strip()
+    expected = resolved_source_path(run, registry)
     actual = inventory.get("source_path")
     if not expected or not isinstance(actual, str) or Path(actual).resolve() != Path(expected).resolve():
         errors.append("Снимок замечаний слоя не связан с исходным DWG этого запуска")
@@ -114,20 +115,20 @@ def capture(store, slug, run_id, required_document_path=None):
     run = loaded["run"]
     if not applies(run):
         raise ValueError("Реестр замечаний слоя предназначен только для оценки преград")
-    source_text = str(run.get("project_snapshot", {}).get("dwg", {}).get("path", "")).strip()
-    if not source_text or not Path(source_text).is_absolute():
-        raise ValueError("В паспорте запуска не закреплён полный путь исходного DWG")
-    source = Path(source_text).resolve()
+    source_text = resolved_source_path(run, loaded["registry"])
     data = loaded["registry"].setdefault("barrier_assessment", {})
     previous = data.setdefault("source_remarks", new_source_remarks())
     try:
-        file_before = _file_fingerprint(source)
         with store.source_remarks_bridge_factory() as client:
             info = client.call("get_drawing_info")
             actual_text = info.get("path", "")
             if not isinstance(actual_text, str) or not Path(actual_text).is_absolute():
                 raise ValueError("AUTOM8LABS не подтвердил полный путь активного DWG")
             actual = Path(actual_text).resolve()
+            source = Path(source_text).resolve() if source_text else actual
+            if not source_text and f"__{run['mode']}__{run_id}" in source.stem:
+                raise ValueError("Первый снимок замечаний необходимо получить из открытого исходного DWG, а не из копии результата")
+            file_before = _file_fingerprint(source)
             if required_document_path and actual != Path(required_document_path).resolve():
                 raise ValueError("Для регистрации результата откройте именно сохраняемый DWG результата")
             allowed = [str(source)]
@@ -160,6 +161,7 @@ def capture(store, slug, run_id, required_document_path=None):
                 _check_baseline(baseline, inventory)
         if _file_fingerprint(source) != file_before:
             raise ValueError("Исходный файл DWG изменился во время чтения; перечитайте исходник")
+        loaded["registry"].setdefault("dwg_actions", {})["source_path"] = str(source)
     except Exception as exc:
         previous["refresh_error"] = str(exc)
         _invalidate(loaded, "Не удалось полностью перечитать исходный слой пояснений")

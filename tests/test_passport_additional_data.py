@@ -124,6 +124,16 @@ class PassportAdditionalDataTests(unittest.TestCase):
         self.gui.change_impact.insert('1.0', 'Перепроверить пути эвакуации')
         self.gui.change_category_vars['Вводные'].set(True)
 
+    def test_dwg_location_preserves_free_text_and_can_be_empty(self):
+        for value in ('Использовать оба открытых DWG; подробности в чате.', ''):
+            with self.subTest(value=value):
+                self.gui.fields['dwg'].set(value)
+                self.gui.save_project()
+                self.gui.update()
+                self.assertEqual(self.gui.fields['dwg'].get(), value)
+                self.assertEqual(self.gui.app.projects.load('save-test')['dwg']['path'], value)
+        self.showerror.assert_not_called()
+
     def test_heights_accept_and_preserve_free_text_after_repeated_saves(self):
         expected = {
             'height_sp1': 'не более 28 м; по п.3.1 СП1, уточнение заказчика.',

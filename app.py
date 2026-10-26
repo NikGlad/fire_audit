@@ -114,7 +114,7 @@ class FireAuditGUI(tk.Tk):
         self.fields: dict[str, tk.Variable] = {}
         row = 0
         row = self._entry(form, row, "name", "Название объекта")
-        row = self._entry(form, row, "dwg", "Полный путь к DWG", browse=True)
+        row = self._entry(form, row, "dwg", "Расположение файла DWG", browse=True)
         row = self._entry(form, row, "gpzu", "Дата ГПЗУ (ГГГГ-ММ-ДД)")
         row = self._entry(form, row, "classes", "Функциональные классы через запятую")
         row = self._entry(form, row, "fire_degree", "Степень огнестойкости")

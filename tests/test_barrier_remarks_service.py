@@ -91,6 +91,21 @@ class SourceRemarksServiceTests(unittest.TestCase):
     def capture(self, run_id=None):
         return self.app.runs.capture_barrier_source_remarks("remarks", run_id or self.run_id)
 
+    def test_open_source_is_pinned_when_passport_location_is_empty_or_prose(self):
+        for location in ('', 'Работать с открытым исходным DWG'):
+            with self.subTest(location=location):
+                project = self.app.projects.load('remarks')
+                project['dwg']['path'] = location
+                self.app.projects.save('remarks', project)
+                run_id = self.create_run()
+                result = self.capture(run_id)
+                loaded = self.load(run_id)
+                self.assertEqual(result['inventory']['source_path'], str(self.source))
+                self.assertEqual(loaded['registry']['dwg_actions']['source_path'], str(self.source))
+                self.assertEqual(loaded['run']['project_snapshot']['dwg']['path'], location)
+                self.assertEqual(self.app.projects.load('remarks')['dwg']['path'], location)
+                self.assertFalse(any('не связан с исходным' in item for item in result['errors']))
+
     def decision(self, handle, run_id=None, status="resolved"):
         inventory = self.load(run_id)["registry"]["barrier_assessment"]["source_remarks"]["inventory"]
         return {

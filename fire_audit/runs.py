@@ -10,6 +10,7 @@ from .io_utils import read_json, utc_now, write_json, atomic_write_text
 from .knowledge import KnowledgeBase
 from .paths import AppPaths
 from .projects import ProjectStore, height_for_task
+from .dwg_selection import dwg_location, explicit_dwg_path, resolved_source_path, dwg_selection_markdown
 from .barrier_inputs import fire_pump_rooms_markdown, additional_inputs_markdown
 from .validation import validate_final_numbering, validate_registry
 from .barriers import (MODE as BARRIER_MODE, LAYER as BARRIER_LAYER, CATEGORY_LAYER,
@@ -237,7 +238,7 @@ class RunStore:
             if plan_change_status == "initial":
                 raise ValueError("Повторный запуск нельзя считать первым")
             effective_plan_status = plan_change_status or "unconfirmed"
-        source_stamp = file_stamp(project.get("dwg", {}).get("path", ""))
+        source_stamp = file_stamp(explicit_dwg_path(dwg_location(project)))
         previous_project = (read_json(Path(baseline["run_file"]), {}).get("project_snapshot", {})
                             if baseline else {})
         changed_passport = passport_changes(previous_project, project) if baseline else {"count": 0, "items": [], "truncated": False}
@@ -313,6 +314,10 @@ class RunStore:
                                      *(RESULT_DWG_STEPS if full_execution else [])]),
             "hard_constraints": {
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
+                "default_dwg_selection": "open_autocad_drawings",
+                "blank_dwg_location_blocks_work": False,
+                "dwg_location_accepts_instructions": True,
+                "current_chat_dwg_instructions_take_precedence": True,
                 "save_dwg": False,
                 "overwrite_source_dwg": False,
                 "save_separate_result_dwg": cad_result,
@@ -432,7 +437,7 @@ class RunStore:
                 "result_copy_required": cad_result,
                 "result_copy_created": False,
                 "result_copy_path": "",
-                "source_path": str(project.get("dwg", {}).get("path", "")),
+                "source_path": explicit_dwg_path(dwg_location(project)),
                 "source_document_contains_results": False,
                 "source_document_kept_unchanged": False,
                 "copy_did_not_change_open_source_identity": False,
@@ -947,21 +952,24 @@ class RunStore:
         *,
         source_document_contains_results: bool,
         copy_did_not_change_open_source_identity: bool,
+        source_path: str | None = None,
     ) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
         run = loaded["run"]
         if not run.get("hard_constraints", {}).get("save_separate_result_dwg"):
             raise ValueError("В задании с итоговым Word-файлом итоговый DWG не создаётся")
         registry = loaded["registry"]
-        source_text = str(run.get("project_snapshot", {}).get("dwg", {}).get("path", "")).strip()
+        source_text = explicit_dwg_path(source_path) if source_path is not None else resolved_source_path(run, registry)
         result_text = str(result_path).strip()
         if not source_text:
-            raise ValueError("В паспорте запуска отсутствует полный путь исходного DWG")
+            raise ValueError("Укажите source_path — фактический полный путь исходного DWG, установленный через AUTOM8LABS; заполнять поле паспорта не обязательно")
         if not result_text:
             raise ValueError("Не указан полный путь нового DWG с результатом")
 
         source = Path(source_text).resolve()
         result = Path(result_text).resolve()
+        if not source.is_file():
+            raise ValueError("Исходный DWG не найден по фактическому source_path")
         if source == result:
             raise ValueError("Файл результата не может совпадать с исходным DWG")
         if source.parent != result.parent:
@@ -1336,6 +1344,7 @@ class RunStore:
             project.get("evacuation", {}).get("stairs_evacuation_description", "")
         ).strip() or "не заполнено"
         additional_inputs = additional_inputs_markdown(project)
+        dwg_selection = dwg_selection_markdown(project)
         pump_inputs = fire_pump_rooms_markdown(project)
         object_norms = run.get("task_variant") == "object_norms"
         analysis_word = run.get("task_variant") == "analysis_word"
@@ -1460,8 +1469,10 @@ class RunStore:
 - Дата создания: {run['created_at']}
 - Корень приложения: `{self.paths.root}`
 - Папка запуска: `{folder}`
-- Исходный DWG: `{project.get('dwg', {}).get('path', '') or 'не закреплён'}`
+- Расположение файла DWG: {dwg_location(project) or 'Открытый файл или файлы DWG в AutoCAD'}
 - Хеш замороженных правил: `{run['knowledge_digest']}`
+
+{dwg_selection}
 
 ## Ключевые параметры
 

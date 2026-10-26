@@ -335,6 +335,7 @@ TOOLS = [
                 "slug": {"type": "string"},
                 "run_id": {"type": "string"},
                 "result_path": {"type": "string"},
+                "source_path": {"type": "string", "description": "Фактический полный путь исходного DWG, установленный через AUTOM8LABS. Указать при пустом поле «Расположение файла DWG», пояснениях вместо пути или уточнении выбора в чате."},
                 "source_document_contains_results": {"type": "boolean"},
                 "copy_did_not_change_open_source_identity": {"type": "boolean"},
             },
@@ -653,6 +654,7 @@ class MCPServer:
                 args["slug"],
                 args["run_id"],
                 args["result_path"],
+                source_path=args.get("source_path"),
                 source_document_contains_results=bool(args["source_document_contains_results"]),
                 copy_did_not_change_open_source_identity=bool(
                     args["copy_did_not_change_open_source_identity"]
