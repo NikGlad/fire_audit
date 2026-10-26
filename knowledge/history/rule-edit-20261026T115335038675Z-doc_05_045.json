@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "doc_05_045",
+  "created_at": "2026-10-26T11:53:35.059190+00:00",
+  "source_sha256": "c25b4de3313821cbbc91e6393346c213c3e07f3e11f80acea52a8f00eab68b8f",
+  "reason": "Утверждённые пользователем положения анализа инструкций: AR 04",
+  "before": {
+    "id": "doc_05_045",
+    "title": "До нанесения должны быть истинны признаки `source_group_fully_detected`, `left_explanation_checked`, `left_explanation_position_verified`, `left_explanation_cop",
+    "text": "До нанесения должны быть истинны признаки `source_group_fully_detected`, `left_explanation_checked`, `left_explanation_position_verified`, `left_explanation_copied_when_present`, `text_styles_preserved`, `relative_positions_preserved` и `repeated_floor_group_copied_from_actualized_group`. Для первого применения последний признак означает, что подтверждено отсутствие предыдущего этажа и выбран правильный первичный источник. Любое значение `false` блокирует нанесение.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  },
+  "after": {
+    "id": "doc_05_045",
+    "title": "До нанесения должны быть истинны признаки `source_group_fully_detected`, `left_explanation_checked`, `left_explanation_position_verified`, `left_explanation_cop",
+    "text": "До нанесения должны быть истинны признаки `source_group_fully_detected`, `left_explanation_checked`, `left_explanation_position_verified`, `left_explanation_copied_when_present`, `text_styles_preserved`, `relative_positions_preserved` и `repeated_floor_group_copied_from_actualized_group`. Для первого применения последний признак означает, что подтверждено отсутствие предыдущего этажа и выбран правильный первичный источник. Любое значение `false` блокирует нанесение.\n\nЭти признаки относятся к обычному копированию существующего полного блока/группы. Для `approved_rule_text` применять доказательства специального правила ar_approved_rule_text_001; отсутствие исходного блока не отмечать как успешно выполненное копирование. Проверка полного образца оформления и результата остаётся обязательной.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  }
+}

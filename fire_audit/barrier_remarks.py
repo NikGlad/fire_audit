@@ -12,7 +12,7 @@ import json
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from .barriers import SOURCE_EXPLANATIONS_LAYER
+from .barriers import SOURCE_EXPLANATIONS_LAYER, LAYER
 
 
 def new_source_remarks() -> dict[str, Any]:
@@ -70,6 +70,9 @@ a blocking error rather than crashing.
         payload = {key: inventory.get(key) for key in
                    ("layer", "source_path", "scope", "layer_exists")}
         payload["entities"] = normalized
+        for key in ("tracked_dimensions", "dimension_layer_evidence", "dimension_layer_journal_digest"):
+            if key in inventory:
+                payload[key] = inventory[key]
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False,
                                allow_nan=False, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -146,6 +149,22 @@ Empty or absent layers need a successful complete capture and an explanation.
         errors.append(f"{prefix}: число найденных объектов matched не совпадает с полной выгрузкой")
     if layer_exists is False and entities:
         errors.append(f"{prefix}: отсутствующий слой не может содержать исходные объекты")
+    tracked = inventory.get("tracked_dimensions", [])
+    if not isinstance(tracked, list):
+        errors.append(f"{prefix}: tracked_dimensions должен быть отдельным списком исходных обмеров")
+        tracked = []
+    tracked_handles = set()
+    for item in tracked:
+        if not isinstance(item, dict):
+            errors.append(f"{prefix}: перенесённый исходный размер должен быть объектом")
+            continue
+        kind = str(item.get("type", "")).casefold().removeprefix("acdb").replace("_", "")
+        if not kind.endswith("dimension") or item.get("layer") != LAYER:
+            errors.append(f"{prefix}: исключение слоя только для рабочего DIMENSION основного слоя ПП")
+        tracked_handles.add(_handle(item.get("handle")))
+    if tracked and (not inventory.get("dimension_layer_journal_digest") or not isinstance(inventory.get("dimension_layer_evidence"), dict)):
+        errors.append(f"{prefix}: нет независимого журнала и свежей проверки перенесённых обмеров")
+    entities = entities + tracked
     handles: set[str] = set()
     entities_by_handle: dict[str, dict[str, Any]] = {}
     for number, entity in enumerate(entities, 1):
@@ -166,7 +185,8 @@ Empty or absent layers need a successful complete capture and an explanation.
         for key in ("type", "space"):
             if not _text(entity.get(key)):
                 errors.append(f"{label}: не заполнено строковое поле {key}")
-        if not isinstance(entity.get("layer"), str) or entity["layer"].casefold() != SOURCE_EXPLANATIONS_LAYER.casefold():
+        if (not isinstance(entity.get("layer"), str)
+                or (entity["layer"].casefold() != SOURCE_EXPLANATIONS_LAYER.casefold() and handle not in tracked_handles)):
             errors.append(f"{label}: объект относится к другому или неуказанному слою")
         if _is_text_entity(entity) and not _has_text_content(entity):
             errors.append(f"{label}: не сохранён полный исходный текст")

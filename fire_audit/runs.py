@@ -21,6 +21,8 @@ from .cad_bridge import AutoCADBridge
 from .continuity import (CONTEXT_KINDS, HISTORY_NAME, PLAN_CHANGE_STATUSES, PRIOR_SNAPSHOT_NAME,
                          comparison_baseline, file_stamp, passport_changes, project_history as build_project_history,
                          work_kind, write_project_history)
+from .continuity_summary import SUMMARY_NAME, build_continuity_summary, eligible_rule_text_sources
+from .knowledge_modules import POLICY_VERSION as MODULE_POLICY_VERSION
 
 
 MODE_LABELS = {
@@ -280,6 +282,9 @@ class RunStore:
                 {"name": doc.name, "path": str(doc.path), "sha256": doc.sha256}
                 for doc in knowledge_snapshot.documents
             ],
+            "knowledge_modules": json.loads(knowledge_snapshot.module_manifest_json or "[]"),
+            "knowledge_module_policy_version": MODULE_POLICY_VERSION,
+            "eligible_rule_text_sources": eligible_rule_text_sources(knowledge_snapshot, mode),
             "project_snapshot": copy.deepcopy(project),
             "project_change_log_snapshot": copy.deepcopy(project.get("change_log", [])),
             "source_file_stamp": source_stamp,
@@ -313,6 +318,7 @@ class RunStore:
                                        if source_selection_word else []),
                                      *(RESULT_DWG_STEPS if full_execution else [])]),
             "hard_constraints": {
+                "instruction_policy_version": 2,
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
                 "default_dwg_selection": "open_autocad_drawings",
                 "blank_dwg_location_blocks_work": False,
@@ -407,9 +413,19 @@ class RunStore:
                 } if mode == "actualization_protocol" else {}),
             },
         }
+        continuity_summary = build_continuity_summary(
+            prior_history, kind, archive_path=str(folder / PRIOR_SNAPSHOT_NAME),
+            passport_changes=changed_passport, plan_revision=run["plan_revision"])
+        run["continuity_summary"] = {"path": str(folder / SUMMARY_NAME),
+            "digest": continuity_summary["summary_digest"], "verification_status": continuity_summary["verification_status"],
+            "candidate_count": len(continuity_summary["state_candidates"])}
         registry = {
             "schema_version": 1,
+            "instruction_policy_version": 2,
             "run_id": run_id,
+            "cycle_id": run_id,
+            "new_finding_cycle_markers": [],
+            "eligible_rule_text_sources": copy.deepcopy(run["eligible_rule_text_sources"]),
             "project_slug": slug,
             "mode": mode,
             "findings": [],
@@ -461,7 +477,9 @@ class RunStore:
                                                "issued_main_text_ids": [], "required_review_keys": []}
             registry["new_plan_review"] = {"items": []}
         if mode in {"protocol", "actualization_protocol"}:
-            registry["protocol"] = {"required": True, "scope_main_text_ids": [],
+            registry["protocol"] = {"required": True, "scope_policy_version": 2, "cycle_id": run_id,
+                                    "scope_source": {"kind": "", "reference": ""}, "scope_entries": [],
+                                    "scope_main_text_ids": [],
                                     "items": [], "text_color_checks": []}
         if mode == BARRIER_MODE:
             profile = next((json.loads(doc.text) for doc in knowledge_snapshot.documents
@@ -616,6 +634,7 @@ class RunStore:
         write_json(folder / "run.json", run)
         write_json(folder / "РЕЕСТР_ПРОВЕРКИ.json", registry)
         write_json(folder / PRIOR_SNAPSHOT_NAME, prior_history)
+        write_json(folder / SUMMARY_NAME, continuity_summary)
         atomic_write_text(folder / "ПРАВИЛА_ЗАПУСКА.md", knowledge_snapshot.context)
         atomic_write_text(folder / "КОНТРОЛЬ_КАЧЕСТВА.md", self._quality_markdown(run))
         # Keep the legacy state readable for old integrations. New tasks and the UI do not use it.
@@ -815,6 +834,11 @@ class RunStore:
     def _add_finding(self, slug: str, run_id: str, finding: dict[str, Any]) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
         registry = loaded["registry"]
+        if loaded["run"].get("hard_constraints", {}).get("instruction_policy_version", 1) >= 2:
+            finding = copy.deepcopy(finding)
+            if not isinstance(finding.get("autocad", {}), dict):
+                raise ValueError("autocad результата должен быть объектом")
+            finding.setdefault("autocad", {})["instruction_policy_version"] = 2
         finding_id = str(finding.get("id", "")).strip()
         if not finding_id:
             raise ValueError("У результата отсутствует id")
@@ -856,6 +880,10 @@ class RunStore:
 
     def capture_barrier_source_remarks(self, slug: str, run_id: str) -> dict[str, Any]:
         return barrier_remarks_service.capture(self, slug, run_id)
+
+    def record_barrier_dimension_layer_changes(self, slug: str, run_id: str,
+                                                changes: list[dict[str, Any]]) -> dict[str, Any]:
+        return barrier_remarks_service.record_dimension_layer_changes(self, slug, run_id, changes)
 
     def record_barrier_source_decisions(self, slug: str, run_id: str, decisions: list[dict[str, Any]],
                                        none_found_reason: str | None = None,
@@ -1047,6 +1075,24 @@ class RunStore:
             else:
                 source_errors = barrier_remarks_service.stored_errors(
                     loaded["run"], loaded["registry"], loaded["folder"])
+        validation_registry = copy.deepcopy(loaded["registry"])
+        policy_errors = []
+        policy = loaded["run"].get("hard_constraints", {}).get("instruction_policy_version", 1)
+        if policy >= 2:
+            trusted = {"instruction_policy_version": policy, "cycle_id": loaded["run"]["run_id"],
+                       "eligible_rule_text_sources": loaded["run"].get("eligible_rule_text_sources", [])}
+            for key, value in trusted.items():
+                if loaded["registry"].get(key) != value:
+                    policy_errors.append("Нельзя изменять закреплённые в запуске данные допуска: " + key)
+                validation_registry[key] = copy.deepcopy(value)
+            if loaded["run"].get("mode") in {"protocol", "actualization_protocol"}:
+                protocol = validation_registry.get("protocol")
+                if not isinstance(protocol, dict):
+                    policy_errors.append("Протокольная часть текущего цикла должна быть объектом")
+                    protocol = validation_registry["protocol"] = {}
+                if protocol.get("scope_policy_version") != 2 or protocol.get("cycle_id") != loaded["run"]["run_id"]:
+                    policy_errors.append("Нельзя отключить политику охвата протокола текущего цикла")
+                protocol.update(scope_policy_version=2, cycle_id=loaded["run"]["run_id"])
         analysis_word = loaded["run"].get("task_variant") in {"analysis_word", "object_norms"}
         if analysis_word:
             actions = loaded["registry"].get("dwg_actions", {})
@@ -1064,12 +1110,14 @@ class RunStore:
             if loaded["run"].get("mode") in {"protocol", "actualization_protocol"}:
                 from .protocol_validation import validate_protocol_analysis_registry
                 protocol_result = validate_protocol_analysis_registry(
-                    loaded["registry"], for_application=for_application)
+                    validation_registry, for_application=for_application)
                 result["errors"].extend(protocol_result["errors"])
                 result["warnings"].extend(protocol_result.get("warnings", []))
                 result["ok"] = not result["errors"]
         else:
-            result = validate_registry(loaded["registry"], for_application=for_application)
+            result = validate_registry(validation_registry, for_application=for_application)
+        result["errors"].extend(policy_errors)
+        result["ok"] = not result["errors"]
         if ((for_application or loaded["registry"].get("dwg_actions", {}).get("work_completed"))
                 and loaded["run"].get("hard_constraints", {}).get("protocol_review_required")):
             protocol_section = loaded["registry"].get("protocol")
@@ -1311,7 +1359,7 @@ class RunStore:
                 summary["more_context_in_registry"] = len(entry.get("continuity_items", [])) > 25
             return summary
 
-        recent_same_kind = [summarize_prior(entry) for entry in same_kind_history[:10]]
+        recent_same_kind = [summarize_prior(entry) for entry in same_kind_history[:1]]
         other_kind_history = {
             other_kind: [summarize_prior(entry, details=False) for entry in entries[:5]]
             for other_kind, entries in grouped_prior.items() if other_kind != kind
@@ -1506,8 +1554,10 @@ class RunStore:
 - Изменённых полей паспорта относительно непосредственно предыдущей итерации этого вида: {run.get('passport_changes', {}).get('count', 0)}.
 - Проектный индекс истории: `{self.projects.project_dir(run['project_slug']) / HISTORY_NAME}`.
 - Зафиксированный снимок прежних запусков: `{folder / PRIOR_SNAPSHOT_NAME}`.
+- Контролируемый свод состояния и ссылки: `{run.get('continuity_summary', {}).get('path', '') or 'в этом историческом запуске отдельный свод не формировался'}`.
+- Статус свода: `{run.get('continuity_summary', {}).get('verification_status', 'использовать прежний снимок и адресные источники')}`; кандидатов: {run.get('continuity_summary', {}).get('candidate_count', 0)}. Автоматическая сборка не подтверждает актуальность прежних выводов.
 
-Основная цепочка строго последовательна внутри одного вида работы: итерация 3 опирается на 2, итерация 4 — на 3 и так далее. Не пропускай непосредственно предыдущую итерацию, даже если она не завершена; при этом явно проверь её статус и доказательства. Прочитай всю историю этого вида, чтобы не потерять подтверждённые факты старых итераций, но текущие выводы не копируй автоматически. Запуски других видов работ используй отдельно и только как вторичный источник для анализа влияния общих изменений: они не заменяют предыдущую итерацию и не определяют статус планов этого вида. Если состояние планов `unconfirmed`, спроси заказчика, новые ли планы относительно указанного запуска; не объявляй геометрию неизменной по совпадению пути или времени файла. Если есть изменения, сопоставь их с прежними замечаниями и решениями по всем затронутым видам работ; составь матрицу влияния. Если планы те же, проверь новые ответы, паспорт, нормы и нерешённые вопросы. Зафиксируй архитектурные факты, решения, изменения и их влияние через `record_continuity` с источниками. Старые реестры и результаты не перезаписывай.
+Основная цепочка строго последовательна внутри одного вида работы: итерация 3 опирается на 2, итерация 4 — на 3 и так далее. Не пропускай непосредственно предыдущую итерацию, даже если она не завершена; при этом явно проверь её статус и доказательства. Начни с её реестра и контролируемого свода состояния со ссылками на источники. Автоматический свод имеет статус `verification_required`, пока его факты, источники и возможность повторного использования не проверены и не зафиксированы в текущем реестре через `record_continuity`. Прежние выводы не копируй автоматически. Глубокое чтение ранних запусков выполняй адресно: по затронутым фактам, зависимостям, противоречиям и нерешённым вопросам; всю растущую цепочку без такого основания повторно читать не требуется. Если свод или источник недоступен либо неполон, восстанови относящуюся цепочку доказательств из полного архива и зафиксируй ограничение. Запуски других видов работ используй отдельно и только как вторичный источник для анализа влияния общих изменений: они не заменяют предыдущую итерацию и не определяют статус планов этого вида. Если состояние планов `unconfirmed`, спроси заказчика, новые ли планы относительно указанного запуска; не объявляй геометрию неизменной по совпадению пути или времени файла. Если есть изменения, сопоставь их с прежними замечаниями и решениями по всем затронутым видам работ; составь матрицу влияния. Если планы те же, проверь новые ответы, паспорт, нормы и нерешённые вопросы. Зафиксируй архитектурные факты, решения, изменения и их влияние через `record_continuity` с источниками. Старые реестры и результаты не перезаписывай. Полный архив и матрица влияния обязательны; свод их не заменяет.
 
 Автоматически найденные различия полей паспорта (это подсказка для анализа, а не вывод по DWG; служебные даты не сравниваются):
 
@@ -1515,7 +1565,7 @@ class RunStore:
 {json.dumps(run.get('passport_changes', {}), ensure_ascii=False, indent=2)}
 ```
 
-Предыдущие итерации **этого вида работы**, от новой к старой (полная цепочка — в файле снимка):
+Ближайшая предыдущая итерация **этого вида работы** (более ранние источники — адресно по своду; полная цепочка сохранена в файле снимка):
 
 ```json
 {json.dumps(recent_same_kind, ensure_ascii=False, indent=2)}

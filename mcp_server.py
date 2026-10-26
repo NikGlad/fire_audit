@@ -25,12 +25,14 @@ SERVER_INSTRUCTIONS = (
     "исходные материалы не изменяются, а помощник создаёт, рендерит и визуально проверяет понятный человеку DOCX. "
     "Не направляйте пользователя во вкладку Контроль, "
     "не требуйте загрузки JSON-плана. Для оценки преград обязателен документ 32: категории, Word-файл "
-    "последовательности и остановка до явного согласования пользователем; затем каждый этап на всех планах "
-    "и этажах до следующего. В варианте анализа Word категории описывайте без изменения DWG. "
+    "последовательности и остановка до явного согласования пользователем; затем каждый этап на всех включённых в поручение планах "
+    "и этажах до следующего. Прямое ограничение области работ сохраняйте. В варианте анализа Word категории описывайте без изменения DWG. "
     "До формирования Word оценки преград тщательно анализируйте необходимость каждого пункта и указывайте "
     "актуальность: Требуется / Не требуется / Требует уточнения, с фактами, источниками и причинами. "
     "Неприменимые этапы сохраняйте с номером и закрывайте без нанесения графики; отсутствие данных не равно неприменимости. "
-    "Для полного варианта до первой изменяющей операции создайте в папке исходного DWG уникальную копию результата и работайте в ней. "
+    "Для полного варианта используйте закреплённую единственную копию результата этого поручения; если её ещё нет, "
+    "создайте её в папке исходного DWG до первой изменяющей операции и продолжайте работу в ней. "
+    "Контрольный снимок реестра, свойств и изображений не является новым DWG и не требует SaveAs. "
     "После работы проверьте выбранный результат, заполните реестр и зарегистрируйте итоговый DWG либо DOCX. "
     "Исходный DWG не изменяйте и не перезаписывайте. Ничего не удаляйте без прямой команды пользователя. "
     "Во всех режимах соблюдайте 14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md: поисковый фрагмент не заменяет полного чтения, "
@@ -220,6 +222,82 @@ TOOLS = [
             }, "required": ["id", "inventory_digest", "source_entity_ids", "kind", "status", "decision",
                             "summary", "basis", "result_refs"]}}
         }, "required": ["slug", "run_id", "decisions"]},
+        read_only=False,
+    ),
+    tool(
+        'record_barrier_dimension_layer_changes',
+        'Регистрирует уже выполненное изменение слоя исходного рабочего DIMENSION после двух полных чтений через AUTOM8LABS. Для уже зарегистрированного handle также добавляет evidence_refresh при изменении связей с лучами без нового переноса слоя. Не изменяет, не сохраняет и не переключает DWG. Первичная классификация measurement обязательна до переноса. При неоднозначных кандидатах лучей перенос не принимается; отсутствие лучей доказывается полным чтением, а не пустым списком. Возврат слоя — следующая запись журнала.',
+        {'type': 'object',
+         'properties': {'slug': {'type': 'string', 'minLength': 1},
+                        'run_id': {'type': 'string', 'minLength': 1},
+                        'changes': {'type': 'array',
+                                    'minItems': 1,
+                                    'maxItems': 100,
+                                    'items': {'type': 'object',
+                                              'additionalProperties': False,
+                                              'properties': {'handle': {'type': 'string',
+                                                                        'pattern': '^[0-9a-fA-F]+$'},
+                                                             'baseline_digest': {'type': 'string',
+                                                                                 'pattern': '^[0-9a-f]{64}$'},
+                                                             'inventory_digest': {'type': 'string',
+                                                                                  'pattern': '^[0-9a-f]{64}$'},
+                                                             'classification_decision_id': {'type': 'string',
+                                                                                            'minLength': 1},
+                                                             'target_layer': {'type': 'string',
+                                                                              'enum': ['экспертиза '
+                                                                                       'противопожарные '
+                                                                                       'преграды',
+                                                                                       'экспертиза '
+                                                                                       'противопожарные '
+                                                                                       'преграды пояснения']},
+                                                             'measurement_value': {'type': 'number'},
+                                                             'measurement_points': {'type': 'array',
+                                                                                    'minItems': 2,
+                                                                                    'maxItems': 2,
+                                                                                    'items': {'type': 'array',
+                                                                                              'minItems': 2,
+                                                                                              'maxItems': 3,
+                                                                                              'items': {'type': 'number'}}},
+                                                             'parameter_review': {'type': 'string',
+                                                                                  'minLength': 1},
+                                                             'absence_review': {'type': 'string',
+                                                                                'description': 'Обязательное '
+                                                                                               'обоснование '
+                                                                                               'полного '
+                                                                                               'отсутствия '
+                                                                                               'адресующих '
+                                                                                               'лучей при '
+                                                                                               'возврате в слой '
+                                                                                               'пояснений.'},
+                                                             'ray_reviews': {'type': 'array',
+                                                                             'items': {'type': 'object',
+                                                                                       'additionalProperties': False,
+                                                                                       'properties': {'ray_handle': {'type': 'string',
+                                                                                                                     'pattern': '^[0-9a-fA-F]+$'},
+                                                                                                      'note_handle': {'type': 'string',
+                                                                                                                      'pattern': '^[0-9a-fA-F]+$'},
+                                                                                                      'note_excerpt': {'type': 'string',
+                                                                                                                       'minLength': 1},
+                                                                                                      'parameter_review': {'type': 'string',
+                                                                                                                           'minLength': 1},
+                                                                                                      'geometry_review': {'type': 'string',
+                                                                                                                          'minLength': 1}},
+                                                                                       'required': ['ray_handle',
+                                                                                                    'note_handle',
+                                                                                                    'note_excerpt',
+                                                                                                    'parameter_review',
+                                                                                                    'geometry_review']}}},
+                                              'required': ['handle',
+                                                           'baseline_digest',
+                                                           'inventory_digest',
+                                                           'classification_decision_id',
+                                                           'target_layer',
+                                                           'measurement_value',
+                                                           'measurement_points',
+                                                           'parameter_review',
+                                                           'ray_reviews']}}},
+         'required': ['slug', 'run_id', 'changes'],
+         'additionalProperties': False},
         read_only=False,
     ),
     tool(
@@ -634,6 +712,8 @@ class MCPServer:
             return app.runs.record_barrier_source_decisions(
                 args["slug"], args["run_id"], args["decisions"], args.get("none_found_reason"),
                 args.get("delete_decision_ids"))
+        if name == "record_barrier_dimension_layer_changes":
+            return app.runs.record_barrier_dimension_layer_changes(args["slug"], args["run_id"], args["changes"])
         if name == "record_semantic_blocks":
             return app.runs.record_semantic_blocks(args["slug"], args["run_id"], args["blocks"])
         if name == "get_finding_template":

@@ -1,0 +1,27 @@
+{
+  "entity_id": "",
+  "entity_type": "",
+  "related_finding_id": "",
+  "floor": "",
+  "purpose": "",
+  "role": "",
+  "action": "unchanged",
+  "usage": "result_graphic",
+  "source_kind": "existing_expert_graphic",
+  "source_entity_id": "",
+  "source_layer": "",
+  "layer": "",
+  "original_layer": "",
+  "color_by_layer": null,
+  "linetype_by_layer": null,
+  "lineweight_by_layer": null,
+  "existing_object_verified": false,
+  "properties_re_read": false,
+  "properties_before": {
+    "layer": "",
+    "color_by_layer": null,
+    "linetype_by_layer": null,
+    "lineweight_by_layer": null
+  },
+  "changes": []
+}

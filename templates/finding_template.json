@@ -135,6 +135,13 @@
       "source_floor": "",
       "new_floor": "",
       "previous_actualized_group_finding_id": "",
+      "content_reconciliation": {
+        "full_template_reference": "",
+        "full_template_text": "",
+        "checked_for_current_floor": false,
+        "restored_branches": []
+      },
+      "approved_rule_text": {},
       "source_text_styles": [],
       "created_copy_entity_ids": [],
       "source_group_fully_detected": false,
@@ -159,6 +166,7 @@
     "layer": "экспертиза",
     "by_layer": true,
     "created_objects": [],
+    "reused_objects": [],
     "layer_verification": {
       "all_created_objects_collected": false,
       "checked_against_autocad": false,

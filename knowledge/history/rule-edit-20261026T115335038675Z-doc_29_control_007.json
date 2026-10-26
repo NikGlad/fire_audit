@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "doc_29_control_007",
+  "created_at": "2026-10-26T11:53:35.113139+00:00",
+  "source_sha256": "c25b4de3313821cbbc91e6393346c213c3e07f3e11f80acea52a8f00eab68b8f",
+  "reason": "Утверждённые пользователем положения анализа инструкций: ПП 02, ПП 03",
+  "before": {
+    "id": "doc_29_control_007",
+    "title": "Служебный объект допускается исключить только отдельной записью `kind=non_remark`, `decision=non_remark`, с одним AutoCAD-id, содержанием и конкретным обоснован",
+    "text": "Служебный объект допускается исключить только отдельной записью `kind=non_remark`, `decision=non_remark`, с одним AutoCAD-id, содержанием и конкретным обоснованием. Для текста дополнительно обязательны контекст и `non_remark_kind`: `legend`, `heading`, `measurement` или `reference_note`. Эти категории не разрешают объявлять замечания служебными. Размеры простенков, которые прежнее правило требует сохранять в этом слое, остаются в DWG и отдельно учитываются как обмеры.",
+    "modes": [
+      "barrier_assessment"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "29_КОНТРОЛЬ_ЗАМЕЧАНИЙ_ПП.md"
+  },
+  "after": {
+    "id": "doc_29_control_007",
+    "title": "Служебный объект допускается исключить только отдельной записью `kind=non_remark`, `decision=non_remark`, с одним AutoCAD-id, содержанием и конкретным обоснован",
+    "text": "Служебный объект допускается исключить только отдельной записью `kind=non_remark`, `decision=non_remark`, с одним AutoCAD-id, содержанием и конкретным обоснованием. Для текста дополнительно обязательны контекст и `non_remark_kind`: `legend`, `heading`, `measurement` или `reference_note`. Эти категории не разрешают объявлять замечания служебными. Рабочие размеры простенков сохранять в DWG и отдельно учитывать как обмеры. Слой определяется правилом barrier_dimension_layer_depends_on_verified_ray_20261023; исходный защищённый DIMENSION переносить только с условиями и журналом pp_source_measurement_layer_transfer. Для такого разрешения явная классификация non_remark_kind=measurement и рассмотрение контекста обязательны и для нетекстового размера.",
+    "modes": [
+      "barrier_assessment"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "29_КОНТРОЛЬ_ЗАМЕЧАНИЙ_ПП.md"
+  }
+}

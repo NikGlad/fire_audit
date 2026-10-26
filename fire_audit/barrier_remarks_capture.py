@@ -159,7 +159,7 @@ def _layer_counts(value: Any) -> dict[str, int]:
     return counts
 
 
-def _assert_no_nested_source(client, blocks: list[dict]) -> None:
+def _assert_no_nested_source(client, blocks: list[dict], checked_layers=None) -> None:
     """Use whole-definition summaries, never the limited entity sample.
 
     Every definition is inspected, including unreferenced, anonymous and dependent
@@ -192,8 +192,8 @@ def _assert_no_nested_source(client, blocks: list[dict]) -> None:
             raise ValueError("Неполный подсчёт слоёв или изменённое определение блока " + block["name"])
         if "entityCount" in response and _integer(response["entityCount"], "definition.entityCount") != block["entityCount"]:
             raise ValueError("Определение блока изменилось во время чтения")
-        target = SOURCE_EXPLANATIONS_LAYER.casefold()
-        if any(count and (layer == target or layer.rsplit("|", 1)[-1] == target)
+        targets = {name.casefold() for name in (checked_layers or {SOURCE_EXPLANATIONS_LAYER})}
+        if any(count and (layer in targets or layer.rsplit("|", 1)[-1] in targets)
                for layer, count in counts.items()):
             raise ValueError(
                 f"В определении блока «{block['name']}» есть объекты слоя замечаний. "
@@ -202,14 +202,15 @@ def _assert_no_nested_source(client, blocks: list[dict]) -> None:
             )
 
 
-def _entity(value: Any) -> dict:
+def _entity(value: Any, expected_layer=SOURCE_EXPLANATIONS_LAYER) -> dict:
     if not isinstance(value, dict):
         raise ValueError("Объекты слоя должны быть возвращены в формате objects")
     _reject_incomplete(value, "объекта слоя замечаний")
     handle = value.get("handle")
     if not isinstance(handle, str) or not re.fullmatch(r"[0-9A-Fa-f]+", handle):
         raise ValueError("Объект слоя замечаний не имеет корректного handle")
-    if not isinstance(value.get("layer"), str) or value["layer"].casefold() != SOURCE_EXPLANATIONS_LAYER.casefold():
+    if (not isinstance(value.get("layer"), str) or not value["layer"].strip()
+            or (expected_layer is not None and value["layer"].casefold() != expected_layer.casefold())):
         raise ValueError(f"Коннектор вернул объект {handle} из другого слоя")
     entity_type = value.get("type")
     if not isinstance(entity_type, str) or not entity_type.strip():
@@ -275,7 +276,7 @@ def _read_entities(client, layer_name: str | None) -> list[dict]:
     return sorted(entities, key=lambda item: item["handle"])
 
 
-def capture_source_layer(client, source_path: str, allowed_document_paths: list[str]) -> dict:
+def capture_source_layer(client, source_path: str, allowed_document_paths: list[str], *, extra_reader=None) -> dict:
     """Capture every supported object, from model space and every paper layout.
 
     The digest and completeness flags are generated here, never supplied by the
@@ -299,11 +300,15 @@ def capture_source_layer(client, source_path: str, allowed_document_paths: list[
         "matched": len(entities), "layer_exists": layer_name is not None, "drawing_state": before,
         "actual_layer_name": layer_name, "nested_sources_checked": True,
     }
+    if extra_reader is not None:
+        inventory.update(extra_reader(client))
     digest = inventory_digest(inventory)
     second_layer_name = _source_layer_name(client.call("list_layers", {}))
     second_entities = _read_entities(client, second_layer_name)
     second = {**inventory, "entities": second_entities, "matched": len(second_entities),
               "layer_exists": second_layer_name is not None}
+    if extra_reader is not None:
+        second.update(extra_reader(client))
     if digest != inventory_digest(second) or second_layer_name != layer_name:
         raise ValueError("Содержимое слоя изменилось между двумя полными чтениями; снимок не принят")
     blocks_after = _block_catalog(client)

@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import PureWindowsPath
 from typing import Any
 from .source_text_revisions import authorized_source_text_revisions
+from .instruction_contracts import cycle_marker_state
 
 
 ACTIVE = "экспертиза"
@@ -30,7 +31,8 @@ TRANSITION_LAYERS = {
     "stu_carry_forward": STU,
     "unanswered_explanation": EXPLANATIONS,
 }
-PHYSICAL_STATUSES = {"resolved", "partially_resolved", "unresolved", "insufficient_data", "not_rechecked"}
+PHYSICAL_STATUSES = {"resolved", "partially_resolved", "unresolved", "insufficient_data", "not_rechecked",
+                     "not_applicable_after_change", "mixed_after_change"}
 DECISIONS = {"accepted", "partially_accepted", "rejected", "not_confirmed", "no_answer"}
 
 
@@ -108,14 +110,37 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
     if not isinstance(scope, list) or len(_ids(scope)) != len(scope):
         errors.append("Не подтверждён уникальный охват выданных групп протокола")
         scope = []
+    scope_v2 = protocol.get("scope_policy_version", 1) >= 2
+    scope_entries = protocol.get("scope_entries", [])
+    scope_by_id = {}
+    empty_scope_allowed = False
+    if scope_v2:
+        source = _mapping(protocol.get("scope_source"))
+        if strict and (not source.get("kind") or not source.get("reference")):
+            errors.append("Охват протокола требует отдельного источника формирования")
+        if not isinstance(scope_entries, list) or any(not isinstance(row, dict) for row in scope_entries):
+            errors.append("Неверный перечень оснований включения в протокол")
+            scope_entries = []
+        scope_by_id = {row.get("main_text_id"): row for row in scope_entries}
+        if strict and (Counter(row.get("main_text_id") for row in scope_entries) != Counter(scope)
+                       or any(not row.get("inclusion_reason") or not row.get("source_reference")
+                              or not isinstance(row.get("reply_required"), bool) for row in scope_entries)):
+            errors.append("Для каждой группы охвата требуются причина, источник и отдельный признак reply_required")
+        empty_scope_allowed = (registry.get("mode") == "actualization_protocol" and not scope
+                               and protocol.get("empty_scope_reason") == "new_plans_without_responses"
+                               and protocol.get("new_plans_received") is True
+                               and protocol.get("responses_received") is False
+                               and bool(source.get("kind")) and bool(source.get("reference")))
     main_ids = [_mapping(item.get("source")).get("main_text_id") for item in items]
     main_ids = [value if isinstance(value, str) else None for value in main_ids]
-    if strict and (Counter(main_ids) != Counter(scope) or (required and not scope)):
+    if strict and (Counter(main_ids) != Counter(scope) or (required and not scope and not empty_scope_allowed)):
         errors.append("Не подтверждён полный охват ответов и безответных выданных групп протокола")
     if len(main_ids) != len(set(main_ids)) or (items and any(not isinstance(h, str) or not h for h in main_ids)):
         errors.append("Повторяются или отсутствуют идентификаторы исходных групп протокола")
     verified = {item.get("handle"): item for item in registry.get("verified_graphics", [])}
     before = {item.get("handle"): item for item in registry.get("graphics_before", [])}
+    markers, marker_errors = cycle_marker_state(registry, strict=strict, planned_only=planned_only)
+    errors.extend(marker_errors)
     changed, created = _ids(registry.get("changed_entity_ids", [])), _ids(registry.get("created_entity_ids", []))
     color_checks = protocol.get("text_color_checks", [])
     if not isinstance(color_checks, list):
@@ -180,11 +205,31 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         all_ids = source_ids | response_ids | consultant_ids
         response_status, decision = response.get("status"), consultant.get("decision")
         physical = plan.get("physical_status")
+        target_states = plan.get("target_statuses", [])
+        if not isinstance(target_states, list) or any(not isinstance(value, str) for value in target_states):
+            target_states = []
+        physical_has_violation = physical in {"unresolved", "partially_resolved"} or (
+            physical == "mixed_after_change" and "unresolved" in target_states)
         checkability = plan.get("checkability")
         kind = transition.get("kind")
         transition_ids = _ids(transition.get("entity_ids", []))
         evidence = _mapping(transition.get("evidence"))
         comment_date = _date(consultant.get("date"))
+        reply_required = scope_by_id.get(main_id, {}).get("reply_required", True)
+        if scope_v2 and response_status == "not_required":
+            require(reply_required is False and not response_ids and not response.get("text")
+                    and consultant.get("comment_required") is False and not consultant_ids
+                    and consultant.get("omission_reason") == "reply_not_required"
+                    and transition.get("kind") == "none" and not transition_ids
+                    and source.get("issued_group") is True and source.get("inventory_complete") is True
+                    and main_id in source_ids,
+                    f"{label}: отсутствие обязанности ответа не разрешает комментарий, переход слоя или фиктивный ответ")
+            # This row records scope only; physical checks remain with the
+            # actualization validator and receive no protocol exemption.
+            continue
+        if scope_v2 and response_status == "missing":
+            require(reply_required is True or kind in {"documentary_carry_forward", "stu_carry_forward"},
+                    f"{label}: безответный комментарий разрешён только при reply_required=true в текущем цикле")
         require(not response.get("kind") or not evidence.get("response_kind")
                 or response.get("kind") == evidence.get("response_kind"),
                 f"{label}: классификация ответа противоречит основанию протокольного действия")
@@ -242,7 +287,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             require(decision != "no_answer", f"{label}: поступивший ответ ошибочно отмечен как отсутствующий")
             require(isinstance(response.get("claims_fixed"), bool),
                     f"{label}: не классифицировано заявление заказчика об устранении")
-            if response.get("claims_fixed") is True and physical in {"unresolved", "partially_resolved"}:
+            if response.get("claims_fixed") is True and physical_has_violation:
                 require(decision in {"rejected", "partially_accepted"} and kind != "accepted_commitment",
                         f"{label}: ответ «исправлено» нельзя принять при доказанном оставшемся нарушении")
         else:
@@ -258,6 +303,28 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             proof = _mapping(plan.get("evidence"))
             require(all(proof.get(key) for key in ("project_entity_ids", "method", "result")),
                     f"{label}: фактический статус не подтверждён проверкой проектных объектов")
+        if physical in {"not_applicable_after_change", "mixed_after_change"}:
+            proof = _mapping(plan.get("applicability_change"))
+            require(all(proof.get(key) for key in ("before", "after", "project_entity_ids", "change_reference", "normative_basis")),
+                    f"{label}: утрата применимости не подтверждена изменением плана и основанием")
+            if physical == "mixed_after_change":
+                target_statuses = target_states
+                require(isinstance(target_statuses, list) and "not_applicable_after_change" in target_statuses
+                        and any(s != "not_applicable_after_change" for s in target_statuses)
+                        and all(s in {"resolved", "unresolved", "insufficient_data", "not_reviewed", "not_applicable_after_change"}
+                                for s in target_statuses),
+                        f"{label}: смешанный статус требует полного перечня статусов целей")
+                if "not_reviewed" in target_statuses:
+                    require(False, f"{label}: смешанный статус не закрывает непроверенные цели")
+                if registry.get("mode") == "actualization_protocol":
+                    matching = [finding for finding in registry.get("findings", []) if isinstance(finding, dict)
+                                and _mapping(finding.get("source")).get("main_text_id") == main_id]
+                    require(len(matching) == 1 and Counter(target_statuses) == Counter(
+                        target.get("status") for target in matching[0].get("targets", [])),
+                        f"{label}: перечень смешанных статусов не совпадает с проверкой целей актуализации")
+                if kind == "accepted_response":
+                    require(all(s in {"resolved", "not_applicable_after_change"} for s in target_statuses),
+                            f"{label}: принятие ответа не может скрыть неустранённую или неподтверждённую цель")
         if kind not in {*TRANSITION_LAYERS, "none"}:
             errors.append(f"{label}: неизвестное протокольное действие")
         elif kind != "none":
@@ -333,7 +400,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                         f"{label}: принятое обещание или схема требуют установленного переноса, а не сохранения слоя")
         ordinary_remark = source.get("kind", "remark") == "remark" and not source_is_blue
         active_header_required = ordinary_remark and (
-            decision == "rejected" or (kind == "none" and physical in {"unresolved", "partially_resolved"})
+            decision == "rejected" or (kind == "none" and physical_has_violation)
             or (response.get("claims_fixed") is True and decision in {"partially_accepted", "not_confirmed"}))
         if active_header_required:
             headers = headers_by_main.get(main_id, set())
@@ -419,7 +486,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         methods = response.get("selected_methods", [])
         require(isinstance(methods, list) and all(isinstance(method, str) and method in {"stu", "risk", "firefighting_plan"} for method in methods),
                 f"{label}: не распознаны выбранные заказчиком варианты решения")
-        if methods and physical in {"unresolved", "partially_resolved"}:
+        if methods and physical_has_violation:
             notice = _mapping(item.get("manager_notice"))
             require(notice.get("status") in {"included_in_result", "sent"} and bool(notice.get("reference"))
                     and bool(notice.get("text")) and notice.get("originating_remark_link") == main_id,
@@ -504,7 +571,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             continue
         require(entity.get("linetype") == "ByLayer" and entity.get("lineWeight") == "ByLayer",
                 f"{handle}: протокольный перенос должен сохранять тип и вес линии ByLayer")
-        require(entity.get("colorIndex") in {256, *role_colors.get(handle, set())},
+        require(entity.get("colorIndex") in {256, *role_colors.get(handle, set()), *({2} if handle in markers else set())},
                 f"{handle}: не подтверждён цвет ByLayer или допустимый авторский цвет текста")
     require(planned_only or owned <= set(verified), "Не все объекты протокола перечитаны из DWG")
     if not errors:

@@ -1119,6 +1119,7 @@ class FireAuditGUI(tk.Tk):
                 "superseded": "Заменено", "historical": "Историческая редакция",
                 "archive_snapshot": "Архивный снимок",
                 "partial": "Частично заменено", "partially_replaced": "Частично заменено",
+                "conditional": "Условно применимо",
                 "not_applicable": "Не относится к режиму"}.get(status, status)
 
     @staticmethod
@@ -1219,6 +1220,10 @@ class FireAuditGUI(tk.Tk):
         details = [f"ID: {row['id']} — {row.get('title', row['id'])}",
                    f"{self._rule_status_label(row)}. Источник: {row.get('history_ref') or row.get('source', '')}",
                    "Виды работ: " + ", ".join(labels.get(value, value) for value in row.get("modes", []))]
+        if row.get("module_id"):
+            details.append(f"Модуль: {row['module_id']} — {row.get('module_title', '')}")
+        if row.get("applicability_reason"):
+            details.append("Применимость: " + row["applicability_reason"])
         if row.get("replaced_by"):
             details.append("Заменено: " + ", ".join(row["replaced_by"]))
         if row.get("effective_modes"):

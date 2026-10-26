@@ -8,6 +8,8 @@ from .barrier_remarks import new_source_remarks, source_remarks_errors, inventor
 from .barrier_remarks_capture import capture_source_layer
 from .io_utils import read_json, write_json, utc_now, sha256_file
 from .dwg_selection import resolved_source_path
+from . import barrier_remarks_moves as moves
+from .norm_lock import normative_update_lock
 
 INVENTORY_FILE = "ИСТОЧНИКИ_ЗАМЕЧАНИЙ_ПП.json"
 BASELINE_FILE = "ОРИГИНАЛ_ЗАМЕЧАНИЙ_ПП.json"
@@ -69,14 +71,15 @@ def stored_errors(run, registry, folder):
                 or baseline.get("digest") != inventory_digest(baseline)):
             errors.append("Не закреплён исходный снимок замечаний именно из исходного DWG")
         else:
-            _check_baseline(baseline, inventory)
+            latest, journal_digest, _ = moves.journal(folder, baseline)
+            _check_baseline(baseline, inventory, latest, journal_digest)
             _check_source_version(baseline)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         errors.append("Сохранённый снимок чтения слоя пояснений недоступен или повреждён: " + str(exc))
     return errors
 
 
-def _check_baseline(baseline, inventory):
+def _check_baseline(baseline, inventory, layer_changes=None, journal_digest=""):
     if (baseline.get("source_path") != inventory.get("source_path")
             or baseline.get("run_id") != inventory.get("run_id")):
         raise ValueError("Исходный снимок замечаний относится к другому DWG или запуску")
@@ -84,9 +87,21 @@ def _check_baseline(baseline, inventory):
     if not baseline_path or Path(baseline_path).resolve() != Path(baseline["source_path"]).resolve():
         raise ValueError("Исходный снимок замечаний получен не из исходного DWG")
     original = {item["handle"].upper(): item for item in baseline["entities"]}
-    current = {item["handle"].upper(): item for item in inventory["entities"]}
+    layer_changes = layer_changes or {}
+    current = {item["handle"].upper(): item for item in inventory["entities"] + inventory.get("tracked_dimensions", [])}
+    if layer_changes:
+        if inventory.get("dimension_layer_journal_digest") != journal_digest:
+            raise ValueError("Снимок не соответствует независимому журналу изменений слоёв")
+        evidence = inventory.get("dimension_layer_evidence", {})
+        moves.validate_move_evidence(baseline, layer_changes, evidence)
+        if any(current.get(handle) != evidence["dimensions"][handle] for handle in layer_changes):
+            raise ValueError("Перенесённые размеры не совпадают с полным чтением DWG")
+    elif inventory.get("tracked_dimensions") or inventory.get("dimension_layer_journal_digest"):
+        raise ValueError("Нет независимого журнала разрешённых переносов размеров")
     missing = sorted(set(original) - set(current))
-    changed = sorted(handle for handle in original.keys() & current.keys() if original[handle] != current[handle])
+    changed = sorted(handle for handle in original.keys() & current.keys()
+                     if original[handle] != current[handle] and not (
+                         handle in layer_changes and moves.layer_only(original[handle], current[handle])))
     if missing or changed:
         raise ValueError("В копии отсутствуют или изменены исходные замечания/объекты слоя: "
                          + ", ".join(missing + changed))
@@ -140,17 +155,24 @@ def capture(store, slug, run_id, required_document_path=None):
                         and (actual.stem.startswith(prefix) or (pinned and actual == Path(pinned).resolve()))):
                     allowed.append(str(actual))
             baseline = read_json(Path(loaded["folder"]) / BASELINE_FILE)
+            latest, journal_digest, _ = moves.journal(loaded["folder"], baseline) if isinstance(baseline, dict) else ({}, "", 0)
             if baseline is None and actual != source:
                 raise ValueError("Первый снимок замечаний необходимо получить именно из исходного DWG")
             if actual != source:
                 if not isinstance(baseline, dict):
                     raise ValueError("Исходный снимок замечаний повреждён")
                 _check_source_version(baseline, full=True)
+            elif latest:
+                raise ValueError("После зарегистрированного переноса размеров перечитывайте копию результата; исходный baseline не переписывается")
             if actual not in {Path(path).resolve() for path in allowed}:
                 raise ValueError("Открыт другой DWG; чтение источников этого запуска запрещено")
             # Pin a single document for every read; switching to even another
             # otherwise permitted document must invalidate this capture.
-            inventory = capture_source_layer(client, str(source), [str(actual)])
+            def extra_reader(bridge):
+                return {**moves.read_move_evidence(bridge, baseline, latest),
+                        "dimension_layer_journal_digest": journal_digest}
+            inventory = capture_source_layer(client, str(source), [str(actual)],
+                                             extra_reader=extra_reader if latest else None)
             if Path(inventory["captured_document_path"]).resolve() != actual:
                 raise ValueError("Активный DWG сменился во время закрепления источников")
             inventory["run_id"] = run_id
@@ -158,7 +180,7 @@ def capture(store, slug, run_id, required_document_path=None):
             if actual != source:
                 if (not isinstance(baseline, dict) or baseline.get("digest") != inventory_digest(baseline)):
                     raise ValueError("Исходный снимок замечаний повреждён")
-                _check_baseline(baseline, inventory)
+                _check_baseline(baseline, inventory, latest, journal_digest)
         if _file_fingerprint(source) != file_before:
             raise ValueError("Исходный файл DWG изменился во время чтения; перечитайте исходник")
         loaded["registry"].setdefault("dwg_actions", {})["source_path"] = str(source)
@@ -230,6 +252,63 @@ def record_decisions(store, slug, run_id, decisions, none_found_reason=None, del
     _save(store, loaded)
     errors = stored_errors(loaded["run"], loaded["registry"], loaded["folder"])
     return {"run_id": run_id, "decision_count": len(by_id), "complete": not errors, "errors": errors}
+
+
+def record_dimension_layer_changes(store, slug, run_id, changes):
+    """Register an already performed layer-only delta after fresh native reads.
+
+    No CAD write, document switch or save is performed. An already journaled
+    handle may append fresh relationship evidence without another layer move.
+    Unknown relationships block the exception; the original guard stays intact.
+    """
+    loaded = store.load(slug, run_id)
+    run, registry, folder = loaded["run"], loaded["registry"], Path(loaded["folder"])
+    if not applies(run) or run.get("task_variant", "full_execution") != "full_execution":
+        raise ValueError("Перенос исходных обмеров доступен только для полной оценки преград в копии DWG")
+    with normative_update_lock(folder / "dimension_layer_changes.lock"):
+        baseline = read_json(folder / BASELINE_FILE)
+        record = registry.get("barrier_assessment", {}).get("source_remarks", {})
+        inventory = record.get("inventory", {})
+        if (not isinstance(baseline, dict) or baseline.get("digest") != inventory_digest(baseline)
+                or baseline.get("run_id") != run_id or read_json(folder / INVENTORY_FILE) != inventory
+                or inventory.get("digest") != inventory_digest(inventory)):
+            raise ValueError("Нужны неизменённый первичный снимок и независимая текущая инвентаризация")
+        latest, previous_digest, count = moves.journal(folder, baseline)
+        prepared = moves.prepare_changes(changes, baseline, inventory, record.get("decisions", []), latest)
+        proposed = {**latest, **{item["handle"]: item for item in prepared}}
+        _check_source_version(baseline, full=True)
+        source = Path(baseline["source_path"]).resolve()
+        actions = registry.get("dwg_actions", {})
+        pinned = str(actions.get("result_copy_path", "")).strip()
+        with store.source_remarks_bridge_factory() as client:
+            actual = Path(client.call("get_drawing_info").get("path", "")).resolve()
+            prefix = f"{source.stem}__{run['mode']}__{run_id}"
+            if (actual == source or actual.parent != source.parent or actual.suffix.lower() != ".dwg"
+                    or not (actual == Path(pinned).resolve() if pinned else actual.stem.startswith(prefix))):
+                raise ValueError("Для журнала откройте единственную копию результата этого запуска")
+            def extra_reader(bridge):
+                return {**moves.read_move_evidence(bridge, baseline, proposed),
+                        "dimension_layer_journal_digest": "pending"}
+            verified = capture_source_layer(client, str(source), [str(actual)], extra_reader=extra_reader)
+            verified["run_id"] = run_id
+            _check_baseline(baseline, verified, proposed, "pending")
+        _check_source_version(baseline, full=True)
+        if (read_json(folder / BASELINE_FILE) != baseline or read_json(folder / INVENTORY_FILE) != inventory
+                or read_json(folder / "РЕЕСТР_ПРОВЕРКИ.json") != registry
+                or read_json(folder / "run.json") != run):
+            raise ValueError("Исходный снимок или решения изменились во время проверки; повторите чтение")
+        entry_digest = moves.append_journal(folder, {
+            "run_id": run_id, "source_path": baseline["source_path"], "baseline_digest": baseline["digest"],
+            "previous_digest": previous_digest, "created_at": utc_now(), "changes": prepared,
+            "captured_document_path": str(actual), "evidence": verified["dimension_layer_evidence"],
+        })
+        registry.setdefault("barrier_assessment", {})["dimension_layer_change_journal"] = {
+            "path": str(folder / moves.JOURNAL_FILE), "entry_count": count + 1, "digest": entry_digest}
+        _invalidate(loaded, "Записан разрешённый перенос исходного размера: требуется свежий снимок и проверка решений")
+        _save(store, loaded)
+        return {"run_id": run_id, "journal_path": str(folder / moves.JOURNAL_FILE),
+                "entry_digest": entry_digest, "change_count": len(prepared), "complete": False,
+                "next_action": "capture_barrier_source_remarks; review decisions against the new inventory digest"}
 
 
 def require_complete(store, slug, run_id, required_document_path=None):

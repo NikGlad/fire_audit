@@ -3,6 +3,17 @@
   "id": "pp_global_drawing_profile",
   "status": "verified",
   "scope": "all_projects",
+  "verification_scope": "drawing_format_only_not_universal_normative_applicability",
+  "legend_characteristics_rule": {
+    "source": "approved_decision_for_the_current_boundary",
+    "predefined_names_are_conditional_examples": true,
+    "preserve_compatible_legend_keys": true,
+    "required_fields": ["construction_kind", "performance", "fire_hazard_class_applicability"],
+    "performance_includes_all_required_R_E_I_W_S": true,
+    "include_K0_when_required_for_common_route_enclosure": true,
+    "missing_or_unconfirmed_characteristic_blocks_use_of_example": true,
+    "verified_status_does_not_confirm_normative_applicability": true
+  },
   "drawing_units": "Millimeters",
   "output_layer": "экспертиза противопожарные преграды",
   "barrier_lineweight": 50,
@@ -31,6 +42,10 @@
     {
       "key": "rated_partition_30",
       "name": "Перегородка с пределом огнестойкости (R)EI(W) 30",
+      "name_template": "Перегородка с пределом огнестойкости {performance}{fire_hazard_class_suffix}",
+      "example_only": true,
+      "required_parameters": ["performance", "fire_hazard_class_applicability"],
+      "fire_hazard_class_suffix_when_required": ", К0",
       "color_index": 4
     },
     {
@@ -46,6 +61,11 @@
     {
       "key": "stairs",
       "name": "Внутренние стены лестничных клеток REI 90",
+      "name_template": "Внутренние стены лестничных клеток {performance}{fire_hazard_class_suffix}",
+      "example_only": true,
+      "example_performance": "REI 90",
+      "required_parameters": ["performance", "fire_hazard_class_applicability"],
+      "required_rating_source": "stair_enclosure_rule.required_rating_source",
       "color_index": 30
     },
     {
@@ -363,7 +383,7 @@
     "column_geometry_does_not_prove_required_fire_resistance": true
   },
   "dimension_text_rule": {
-    "scope": "all_linear_measurements_all_objects",
+    "scope": "authorized_working_barrier_assessment_linear_measurements_all_projects",
     "content": "numeric_value_only",
     "units": "millimetres",
     "unit_suffix": false,
@@ -374,7 +394,13 @@
     "retain_actual_measurement_and_style_precision": true,
     "retain_extension_points_and_dimension_line": true,
     "check_style_prefix_and_suffix": true,
-    "retarget_rays_after_actual_text_fit": true
+    "retarget_rays_after_actual_text_fit": true,
+    "prefer_individual_dimension_override": true,
+    "preserve_shared_styles_used_by_source_or_other_entities": true,
+    "inspect_all_style_users_before_style_edit": true,
+    "clone_working_style_when_shared": true,
+    "assign_working_style_only_to_authorized_measurements": true,
+    "source_measurement_layer_only_exception_does_not_allow_text_or_style_changes": true
   },
   "dimension_layer_rule": {
     "scope": "working_barrier_assessment_dimensions",
@@ -383,6 +409,33 @@
     "bidirectional_link_check_required": true,
     "geometric_proximity_alone_does_not_prove_link": true,
     "preserve_geometry_text_style_and_entity_properties": true,
-    "working_dimensions_in_explanation_layer_are_not_original_expertise_remarks": true
+    "working_dimensions_in_explanation_layer_are_not_original_expertise_remarks": true,
+    "layer_name_alone_does_not_prove_measurement_origin": true,
+    "source_measurement_requires_explicit_initial_classification": true,
+    "source_measurement_transfer_requires_append_only_journal": true,
+    "source_measurement_transfer_preserves_handle_and_every_property_except_layer": true,
+    "source_measurement_baseline_is_not_rewritten": true,
+    "source_measurement_requires_fresh_full_drawing_readback": true,
+    "absence_of_ray_requires_complete_relationship_check": true
+  },
+  "correction_checkpoint_rule": {
+    "save_existing_single_pinned_result": true,
+    "snapshot_contents": ["path", "time", "available_saved_file_hash", "entity_registry", "properties", "fresh_images", "retained_customer_edits"],
+    "snapshot_is_not_additional_dwg": true,
+    "save_as_for_checkpoint": false,
+    "additional_dwg_requires_separate_explicit_user_instruction": true
+  },
+  "work_scope_rule": {
+    "explicit_scope_controls_graphic_actions": true,
+    "kinds": ["full_assessment", "addressed_correction", "formatting_only"],
+    "example_does_not_narrow_full_authorized_scope": true,
+    "record_dependencies_outside_scope_without_unrequested_graphics": true
+  },
+  "gpzu_boundary_rule": {
+    "reference_date": "2026-01-01",
+    "existing_before_and_after_branches_unchanged": true,
+    "equal_or_unknown_date_requires_confirmed_edition_basis": true,
+    "unconfirmed_transition_requires_addressed_query": true,
+    "automatic_boundary_inclusivity_is_forbidden": true
   }
 }

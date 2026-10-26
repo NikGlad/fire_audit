@@ -22,6 +22,33 @@ class SharedKnowledgeTests(unittest.TestCase):
         shutil.copytree(source / 'knowledge', self.root / 'knowledge')
         self.knowledge = KnowledgeBase(AppPaths(self.root))
 
+    def assert_thematic_rule_or_pending_core(self, mode, snapshot, rule_id):
+        """A pending algorithm defers this theme, retaining its source and mandatory core."""
+        pending_modes = {'ar_assessment_transfer', 'ar_plan_preparation', 'ar_plan_comparison', 'du_assessment'}
+        self.assertEqual(snapshot.instructions_pending, mode in pending_modes)
+        if mode not in pending_modes:
+            return False
+        manifest = json.loads(snapshot.module_manifest_json)
+        included = {key for module in manifest for key in module['included_rule_ids']}
+        excluded = {row['id']: row['reason'] for module in manifest for row in module['excluded_rules']}
+        self.assertIn(rule_id, excluded)
+        self.assertIn('до утверждения алгоритма', excluded[rule_id])
+        self.assertNotIn(rule_id, included)
+        # These are independent expectations of the approved core, not a copy
+        # of the implementation's selector: registry, replies and passport priority.
+        self.assertTrue({'doc_25_025', 'doc_25_027', 'doc_25_030',
+                         'doc_25_054', 'doc_25_055', 'doc_25_056'}.issubset(included))
+        self.assertIn('не разрешает выдумывать данные', snapshot.context)
+        self.assertIn('без повторной команды «продолжай»', snapshot.context)
+        self.assertIn('обязательной исходной посылкой проверки именно этого объекта', snapshot.context)
+        self.assertIn('Проверку и изменения AutoCAD не выполнять', snapshot.context)
+        catalogue = json.loads(self.knowledge.load_document('rule_blocks.json').text)
+        rule = next(row for row in catalogue['rules'] if row['id'] == rule_id)
+        self.assertTrue(rule['text'].strip())
+        self.assertNotIn(rule['text'], snapshot.context)
+        self.assertIn(rule['text'], self.knowledge.resolved_document('25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md'))
+        return True
+
     def test_occupancy_rule_is_shared_and_not_bound_to_room_numbers(self):
         filename = '25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md'
         text = self.knowledge.resolved_document(filename)
@@ -39,7 +66,10 @@ class SharedKnowledgeTests(unittest.TestCase):
         heading = 'Обязательное замечание по огнестойкости и самозакрыванию дверей'
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.knowledge.context_for_mode(mode)
+                snapshot = self.knowledge.snapshot_for_mode(mode)
+                if self.assert_thematic_rule_or_pending_core(mode, snapshot, 'doc_25_085'):
+                    continue
+                context = snapshot.context
                 self.assertIn(heading, context)
                 self.assertIn('всегда принимать соответствующее требование невыполненным', context)
                 self.assertIn('не доказанная фактическая характеристика', context)
@@ -90,7 +120,10 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_corridor_60m_partition_assumption_reaches_all_modes(self):
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.knowledge.context_for_mode(mode)
+                snapshot = self.knowledge.snapshot_for_mode(mode)
+                if self.assert_thematic_rule_or_pending_core(mode, snapshot, 'doc_25_031'):
+                    continue
+                context = snapshot.context
                 self.assertIn('Принятое условие для деления коридоров на участки не более 60 м', context)
                 self.assertIn('обмер длины единого коридора выполнять без учёта разделяющих его участки '
                               'обычных перегородок и дверей', context)
@@ -110,7 +143,10 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_corridor_length_includes_all_connected_sections(self):
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.knowledge.context_for_mode(mode)
+                snapshot = self.knowledge.snapshot_for_mode(mode)
+                if self.assert_thematic_rule_or_pending_core(mode, snapshot, 'doc_25_033'):
+                    continue
+                context = snapshot.context
                 self.assertIn('учитывать все участки и ответвления единого коридора', context)
                 self.assertIn('длину определять суммированием их длин', context)
                 self.assertIn('Каждый участок включать в сумму один раз', context)
@@ -121,7 +157,10 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_production_height_is_self_assessed_without_questions_in_every_mode(self):
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.knowledge.context_for_mode(mode)
+                snapshot = self.knowledge.snapshot_for_mode(mode)
+                if self.assert_thematic_rule_or_pending_core(mode, snapshot, 'doc_25_063'):
+                    continue
+                context = snapshot.context
                 self.assertIn('Высота производственных помещений по п. 6.2.2 СП 4 — без запроса', context)
                 self.assertIn('Не запрашивать у пользователя сведения о высоте, наличии или регулярности непоказанных проходов', context)
                 self.assertIn('не объявлять локальный обмер минимальной высотой всех участков', context)
@@ -132,7 +171,10 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_exit_height_is_self_assessed_without_questions_in_every_mode(self):
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.knowledge.context_for_mode(mode)
+                snapshot = self.knowledge.snapshot_for_mode(mode)
+                if self.assert_thematic_rule_or_pending_core(mode, snapshot, 'doc_25_065'):
+                    continue
+                context = snapshot.context
                 self.assertIn('Высота эвакуационных выходов по п. 4.2.18 СП 1 — без запроса', context)
                 self.assertIn('запрос о высоте выходов не давать', context)
                 self.assertIn('Не запрашивать ведомость заполнения проёмов', context)

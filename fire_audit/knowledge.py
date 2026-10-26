@@ -14,6 +14,7 @@ from .io_utils import sha256_file, atomic_write_text
 from .paths import AppPaths
 from .rule_registry import RuleResolver
 from .norm_lock import normative_update_lock
+from .knowledge_modules import ModulePlan, PENDING_MODES, rule_scope
 
 
 MODE_FILES = {
@@ -107,6 +108,7 @@ class KnowledgeSnapshot:
     documents: tuple[KnowledgeDocument, ...]
     instructions_pending: bool
     rendered_documents: tuple[tuple[str, str], ...] = ()
+    module_manifest_json: str = ""
 
 
 class KnowledgeBase:
@@ -434,14 +436,24 @@ class KnowledgeBase:
         if (self.paths.knowledge / "rule_blocks.json").is_file():
             names.append("rule_blocks.json")
         documents = tuple(self.load_document(name) for name in dict.fromkeys(names))
-        resolver = self._validate_resolver_sources({doc.name: doc.text for doc in documents}, mode)
+        sources = {doc.name: doc.text for doc in documents}
+        resolver = self._validate_resolver_sources(sources, mode)
+        pending = self._pending_from_sources(sources, mode, resolver)
+        module_plan = self._module_plan(sources, mode, resolver, pending=pending)
         parts: list[str] = []
+        if module_plan:
+            parts.append(module_plan.preamble())
         rendered_documents: dict[str, str] = {}
         for doc in documents:
             if doc.name == "rule_blocks.json":
                 continue
             if doc.name != "rule_overrides.json":
-                rendered = resolver.render(doc.text, source=doc.name) if resolver and doc.path.suffix.lower() == ".md" else doc.text
+                template = module_plan.filter_template(doc.name, doc.text) if module_plan and doc.name.endswith(".md") else doc.text
+                if module_plan and pending and doc.name in {"room_classification.json", "barrier_drawing_profile.json"}:
+                    continue
+                if module_plan and not template.strip():
+                    continue
+                rendered = resolver.render(template, source=doc.name) if resolver and doc.path.suffix.lower() == ".md" else template
                 rendered_documents[doc.name] = rendered
                 parts.append(f"\n===== {doc.name} =====\n{rendered.strip()}\n")
                 continue
@@ -456,12 +468,26 @@ class KnowledgeBase:
                         body = resolver.render(body, source="rule_overrides.json:" + rule["id"])
                     parts.append(f"\nПравило {rule['id']} (заменяет: {', '.join(rule.get('replaces', [])) or 'нет'}):\n{body}\n")
         context = "".join(parts).strip() + "\n"
-        marker = "алгоритм этого вида проверки ещё не передан пользователем"
-        pending = any(marker in rendered_documents.get(doc.name, doc.text).lower() for doc in documents
-                      if doc.name in MODE_FILES[mode] and doc.path.suffix.lower() == ".md")
         return KnowledgeSnapshot(mode=mode, context=context, digest=hashlib.sha256(context.encode("utf-8")).hexdigest(),
                                  documents=documents, instructions_pending=pending,
-                                 rendered_documents=tuple(rendered_documents.items()))
+                                 rendered_documents=tuple(rendered_documents.items()),
+                                 module_manifest_json=json.dumps(module_plan.modules, ensure_ascii=False, sort_keys=True) if module_plan else "")
+
+    def _pending_from_sources(self, sources: dict[str, str], mode: str, resolver: RuleResolver | None) -> bool:
+        marker = "алгоритм этого вида проверки ещё не передан пользователем"
+        probe = RuleResolver(resolver.catalogue, mode, emit_once=False) if resolver else None
+        return any(marker in (probe.render(sources[name], source=name) if probe else sources[name]).lower()
+                   for name in MODE_FILES[mode] if name in sources and name.endswith(".md"))
+
+    def _module_plan(self, sources: dict[str, str], mode: str | None, resolver: RuleResolver | None,
+                     *, pending: bool = False) -> ModulePlan | None:
+        if mode is None or resolver is None or resolver.catalogue.get("template_sources_only") is not True:
+            return None
+        records = json.loads(sources.get("rule_overrides.json", '{"rules": []}'))["rules"]
+        states = self._override_states(records, mode)
+        forced = [row["text_ref"] for row in records if row.get("text_ref") and states[row["id"]]["effective_modes"]]
+        return ModulePlan(resolver.catalogue, sources, mode, pending=pending,
+                          algorithm_documents=MODE_FILES[mode], override_ids=forced)
 
     def instructions_pending(self, mode: str) -> bool:
         return self.snapshot_for_mode(mode).instructions_pending
@@ -480,24 +506,35 @@ class KnowledgeBase:
             names = [name]
             if name != "rule_blocks.json" and (self.paths.knowledge / "rule_blocks.json").is_file():
                 names.append("rule_blocks.json")
-            documents = tuple(self.load_document(item) for item in names)
+            if mode and name != "rule_overrides.json" and (self.paths.knowledge / "rule_overrides.json").is_file():
+                names.append("rule_overrides.json")
+            if mode in PENDING_MODES:
+                names.extend(MODE_FILES[mode])
+            documents = tuple(self.load_document(item) for item in dict.fromkeys(names))
         sources = {doc.name: doc.text for doc in documents}
         if name not in sources:
             raise FileNotFoundError(name)
         resolver = self._validate_resolver_sources(sources, mode)
-        return self._resolved_text(name, sources, resolver, mode)
+        pending = self._pending_from_sources(sources, mode, resolver) if mode else False
+        plan = self._module_plan(sources, mode, resolver, pending=pending) if name.endswith(".md") else None
+        return self._resolved_text(name, sources, resolver, mode, plan=plan)
 
     def _resolved_text(self, name: str, sources: dict[str, str], resolver: RuleResolver | None,
-                       mode: str | None = None) -> str:
+                       mode: str | None = None, *, plan: ModulePlan | None = None) -> str:
         if name == "rule_blocks.json":
             rows = resolver.rows() if resolver else []
+            if plan:
+                rows = [row for row in rows if row["id"] in plan.included]
+            elif mode:
+                rows = [row for row in rows if rule_scope(row, mode)["applicability_status"] != "not_applicable"]
             return "\n\n".join(resolver.render("{{rule:" + row["id"] + "}}", source=name) for row in rows)
         if name == "rule_overrides.json":
             records = json.loads(sources[name])["rules"]
             states = self._override_states(records, mode)
             return "\n\n".join((resolver.render(self._override_text(row), source=name) if resolver else self._override_text(row))
                                for row in records if states[row["id"]]["effective_modes"])
-        return resolver.render(sources[name], source=name) if resolver and name.endswith(".md") else sources[name]
+        template = plan.filter_template(name, sources[name]) if plan and name.endswith(".md") else sources[name]
+        return resolver.render(template, source=name) if resolver and name.endswith(".md") else template
 
     def search(self, query: str, limit: int = 20, *, mode: str | None = None,
                include_history: bool = False) -> list[dict[str, Any]]:
@@ -512,12 +549,16 @@ class KnowledgeBase:
                      and (applicable_names is None or path.name in applicable_names)]
         sources = {doc.name: doc.text for doc in documents}
         resolver = self._validate_resolver_sources(sources, mode)
+        plan = self._module_plan(sources, mode, resolver,
+                                 pending=self._pending_from_sources(sources, mode, resolver) if mode else False)
         for doc in documents:
+            if plan and plan.pending and doc.name in {"room_classification.json", "barrier_drawing_profile.json"}:
+                continue
             if resolver:
                 # Each search result is a complete document, using one captured revision.
                 resolver.emitted.clear()
                 resolver.used_ids.clear()
-            text = self._resolved_text(doc.name, sources, resolver, mode)
+            text = self._resolved_text(doc.name, sources, resolver, mode, plan=plan)
             lower = text.lower()
             score = sum(lower.count(term) for term in terms)
             if score:
@@ -551,15 +592,33 @@ class KnowledgeBase:
         sources = {doc.name: doc.text}
         if (self.paths.knowledge / "rule_overrides.json").is_file():
             sources["rule_overrides.json"] = self.load_document("rule_overrides.json").text
+        if mode in PENDING_MODES:
+            for name in MODE_FILES[mode]:
+                sources[name] = self.load_document(name).text
         resolver = self._validate_resolver_sources(sources, mode)
+        pending = self._pending_from_sources(sources, mode, resolver) if mode else False
         overrides = json.loads(sources.get("rule_overrides.json", '{"rules": []}'))["rules"]
         states = self._override_states(overrides, mode)
+        forced = {row["text_ref"] for row in overrides if row.get("text_ref") and states[row["id"]]["effective_modes"]}
         rows = []
         canonical = {}
         for original in resolver.rows():
             row = copy.deepcopy(original)
             row.update(source=doc.name, editable=row.get("status", "active") == "active", source_sha256=doc.sha256,
                        effective_status="active", replaced_by=[], record_type="canonical")
+            scope = rule_scope(row, mode)
+            if row["id"] in forced and scope["applicability_status"] == "not_applicable":
+                scope.update(applicability_status="conditional", applicability_reason="Прямое действующее уточнение выбранного режима сохраняет полный текст; проверить его условия и границы применения")
+            row.update(scope)
+            if scope["applicability_status"] == "not_applicable":
+                row["effective_status"] = "not_applicable"
+                if not include_history:
+                    continue
+            elif scope["applicability_status"] == "conditional":
+                row["effective_status"] = "conditional"
+                if pending:
+                    row["applicability_status"] = "deferred"
+                    row["applicability_reason"] = "Тематическое выполнение отложено до утверждения алгоритма; полный текст сохранён в базе"
             canonical[row["id"]] = row
             rows.append(row)
         history = self._history_rule_rows(mode, states) if include_history else []
@@ -617,6 +676,9 @@ class KnowledgeBase:
             if row["id"] == rule_id:
                 row.update(source=doc.name, editable=True, source_sha256=doc.sha256,
                            effective_status="active", replaced_by=[], record_type="canonical")
+                row.update(rule_scope(row, None))
+                if row["applicability_status"] == "conditional":
+                    row["effective_status"] = "conditional"
                 historical_ids = {rule_id, *row.get("legacy_override_ids", [])}
                 row["history"] = [entry for entry in self._history_rule_rows() if entry.get("id") in historical_ids]
                 resolver.emit_once = False

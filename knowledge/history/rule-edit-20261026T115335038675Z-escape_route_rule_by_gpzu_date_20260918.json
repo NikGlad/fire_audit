@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "escape_route_rule_by_gpzu_date_20260918",
+  "created_at": "2026-10-26T11:53:35.143670+00:00",
+  "source_sha256": "c25b4de3313821cbbc91e6393346c213c3e07f3e11f80acea52a8f00eab68b8f",
+  "reason": "Утверждённые пользователем положения анализа инструкций: ПП 06",
+  "before": {
+    "id": "escape_route_rule_by_gpzu_date_20260918",
+    "title": "escape_route_rule_by_gpzu_date_20260918",
+    "text": "При дате ГПЗУ после 01.01.2026 п. 5.2.7 СП 2 применять ко всем общим путям эвакуации независимо от функциональной части. При более ранней дате применять п. 7.1.11 СП 1 для общественных зданий и частей, а для зданий высотой 28 м и более учитывать действовавший п. 5.2.7 СП 2 для всех зданий.",
+    "modes": [
+      "barrier_assessment"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "rule_overrides.json",
+    "legacy_override_ids": [
+      "escape_route_rule_by_gpzu_date_20260918"
+    ]
+  },
+  "after": {
+    "id": "escape_route_rule_by_gpzu_date_20260918",
+    "title": "escape_route_rule_by_gpzu_date_20260918",
+    "text": "При дате ГПЗУ после 01.01.2026 п. 5.2.7 СП 2 применять ко всем общим путям эвакуации независимо от функциональной части. При более ранней дате применять п. 7.1.11 СП 1 для общественных зданий и частей, а для зданий высотой 28 м и более учитывать действовавший п. 5.2.7 СП 2 для всех зданий.\n\n{{rule:pp_gpzu_boundary_confirmation}}",
+    "modes": [
+      "barrier_assessment"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "rule_overrides.json",
+    "legacy_override_ids": [
+      "escape_route_rule_by_gpzu_date_20260918"
+    ]
+  }
+}

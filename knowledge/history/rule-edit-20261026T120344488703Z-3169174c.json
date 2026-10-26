@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "doc_05_027",
+  "created_at": "2026-10-26T12:03:44.491696+00:00",
+  "source_sha256": "8a52e3fb69ca055c49e16cc6086e99e57849a74004b7d5147d9932fc470439af",
+  "before": {
+    "id": "doc_05_027",
+    "title": "- `entity_id` — идентификатор AutoCAD;",
+    "text": "- `entity_id` — идентификатор AutoCAD;\n- `entity_type` — фактический тип объекта;\n- `related_finding_id` — идентификатор связанного замечания;\n- `floor` — этаж;\n- `purpose` — назначение объекта;\n- `role` — роль объекта в группе;\n- `layer` — фактическое точное имя слоя;\n- `color_by_layer`, `linetype_by_layer`, `lineweight_by_layer` — результаты проверки свойств.\n\n- `action` — происхождение/действие над объектом;\n- для существующего объекта: `original_layer`, `existing_object_verified`, `properties_re_read`; при `modified` — `changes` с проверяемыми значениями до/после. Связи общей графики со всеми замечаниями и доказательства её пригодности сохранять. Требования проверки свойств применять с действующими специальными исключениями, не подгонять сохранённую графику под вид вновь созданной.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  },
+  "after": {
+    "id": "doc_05_027",
+    "title": "- `entity_id` — идентификатор AutoCAD;",
+    "text": "- `entity_id` — идентификатор AutoCAD;\n- `entity_type` — фактический тип объекта;\n- `related_finding_id` — идентификатор связанного замечания;\n- `floor` — этаж;\n- `purpose` — назначение объекта;\n- `role` — роль объекта в группе;\n- `layer` — фактическое точное имя слоя;\n- `color_by_layer`, `linetype_by_layer`, `lineweight_by_layer` — результаты проверки свойств.\n\n- `action` — происхождение/действие над объектом;\n- для существующего объекта: `original_layer`, `existing_object_verified`, `properties_re_read`; при `modified` — `changes` с проверяемыми значениями до/после. Связи общей графики со всеми замечаниями и доказательства её пригодности сохранять. Требования проверки свойств применять с действующими специальными исключениями, не подгонять сохранённую графику под вид вновь созданной.\n\nДля записей autocad.reused_objects использовать шаблон templates/reused_object_template.json. В properties_before сохранять исходный слой, свойства color_by_layer, linetype_by_layer, lineweight_by_layer и остальные проверяемые свойства, которые меняются. При action=modified поле changes — непустой список {property, before, after}; исходные значения должны совпадать с properties_before, итоговые — с повторно прочитанными свойствами; не допускать пропущенных и повторных изменений. Для reused/unchanged перечитанные свойства должны совпадать с исходными. Сам факт повторного использования или modified не отменяет контроль слоёв и свойств. Неизменённые существующие обмеры без лучей могут сохраняться на слое экспертиза обмеры; экспертная цель луча должна соответствовать точному слою источника по действующим правилам. Для явной связи сохранять source_entity_id и source_layer и сверять их с перечитанной записью исходного объекта; одна неподтверждённая строка source_layer не является основанием. Существующий основной текст при разрешённом редактировании сохраняет исходный слой. Перенесённый обмер остаётся тем же AutoCAD-id с действием modified в reused_objects, а не created. Исходная проектная графика (source_kind=project_geometry, usage=analysis_only) сохраняется неизменной и не заменяет состав выдаваемой экспертной группы.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  }
+}

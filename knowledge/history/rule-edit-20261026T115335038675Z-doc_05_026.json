@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "doc_05_026",
+  "created_at": "2026-10-26T11:53:35.051643+00:00",
+  "source_sha256": "c25b4de3313821cbbc91e6393346c213c3e07f3e11f80acea52a8f00eab68b8f",
+  "reason": "Утверждённые пользователем положения анализа инструкций: AR 03",
+  "before": {
+    "id": "doc_05_026",
+    "title": "Каждый такой объект записывать отдельной строкой в `autocad.created_objects` со следующими полями:",
+    "text": "Каждый такой объект записывать отдельной строкой в `autocad.created_objects` со следующими полями:",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  },
+  "after": {
+    "id": "doc_05_026",
+    "title": "Каждый такой объект записывать отдельной строкой в `autocad.created_objects` со следующими полями:",
+    "text": "Собрать общий инвентарь итоговых объектов с действием `created`, `reused`, `modified` или `unchanged`. Новые AutoCAD-id записывать в `autocad.created_objects`; существующие объекты — в `autocad.reused_objects`, включая изменённые с действием `modified` и перечнем изменений. Один id не дублировать в обеих коллекциях. Перенос слоя, положения или изменение текста не создаёт новый объект. Общий инвентарь строится из обеих коллекций со следующими полями:",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  }
+}

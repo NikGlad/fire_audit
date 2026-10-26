@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "rule_edit",
+  "id": "doc_05_027",
+  "created_at": "2026-10-26T11:53:35.054206+00:00",
+  "source_sha256": "c25b4de3313821cbbc91e6393346c213c3e07f3e11f80acea52a8f00eab68b8f",
+  "reason": "Утверждённые пользователем положения анализа инструкций: AR 03",
+  "before": {
+    "id": "doc_05_027",
+    "title": "- `entity_id` — идентификатор AutoCAD;",
+    "text": "- `entity_id` — идентификатор AutoCAD;\n- `entity_type` — фактический тип объекта;\n- `related_finding_id` — идентификатор связанного замечания;\n- `floor` — этаж;\n- `purpose` — назначение объекта;\n- `role` — роль объекта в группе;\n- `layer` — фактическое точное имя слоя;\n- `color_by_layer`, `linetype_by_layer`, `lineweight_by_layer` — результаты проверки свойств.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  },
+  "after": {
+    "id": "doc_05_027",
+    "title": "- `entity_id` — идентификатор AutoCAD;",
+    "text": "- `entity_id` — идентификатор AutoCAD;\n- `entity_type` — фактический тип объекта;\n- `related_finding_id` — идентификатор связанного замечания;\n- `floor` — этаж;\n- `purpose` — назначение объекта;\n- `role` — роль объекта в группе;\n- `layer` — фактическое точное имя слоя;\n- `color_by_layer`, `linetype_by_layer`, `lineweight_by_layer` — результаты проверки свойств.\n\n- `action` — происхождение/действие над объектом;\n- для существующего объекта: `original_layer`, `existing_object_verified`, `properties_re_read`; при `modified` — `changes` с проверяемыми значениями до/после. Связи общей графики со всеми замечаниями и доказательства её пригодности сохранять. Требования проверки свойств применять с действующими специальными исключениями, не подгонять сохранённую графику под вид вновь созданной.",
+    "modes": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "protocol"
+    ],
+    "requires": [],
+    "status": "active",
+    "origin_document": "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+  }
+}

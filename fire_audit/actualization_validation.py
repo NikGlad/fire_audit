@@ -7,6 +7,7 @@ from typing import Any
 
 from .protocol_validation import protocol_validation_state, authorized_comment_correction
 from .source_text_revisions import authorized_source_text_revisions
+from .instruction_contracts import approved_rule_text_errors, cycle_marker_state
 
 
 RESOLVED_LAYER = "экспертиза устранено"
@@ -14,8 +15,9 @@ RESOLVED_SOURCE_LAYERS = {RESOLVED_LAYER, "экспертиза устранен
 ACTIVE_LAYER = "экспертиза"
 BLUE_STU_LAYERS = {"экспертиза СТУ", "экспертиза СТУ протокол"}
 GROUP_STATUSES = {"resolved", "partially_resolved", "unresolved", "insufficient_data",
-                  "not_reviewed", "excluded_fire_safety_frame", "information_request"}
-TARGET_STATUSES = {"resolved", "unresolved", "insufficient_data", "not_reviewed"}
+                  "not_reviewed", "excluded_fire_safety_frame", "information_request",
+                  "not_applicable_after_change", "mixed_after_change"}
+TARGET_STATUSES = {"resolved", "unresolved", "insufficient_data", "not_reviewed", "not_applicable_after_change"}
 
 
 def validate_actualization_registry(registry: dict[str, Any], for_application: bool = False) -> dict[str, Any]:
@@ -24,6 +26,9 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     actions = registry.get("dwg_actions", {})
     complete = bool(actions.get("work_completed"))
     strict = for_application or complete
+    policy_v2 = registry.get("instruction_policy_version", 1) >= 2
+    markers, marker_errors = cycle_marker_state(registry, strict=strict)
+    errors.extend(marker_errors)
     protocol_state = protocol_validation_state(registry, strict=strict)
     errors.extend(protocol_state["errors"])
     warnings.extend(protocol_state["warnings"])
@@ -62,7 +67,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
             rows = coverage.get("items", [])
             required = scope.get("required_review_keys", [])
             allowed = {"resolved", "unresolved", "insufficient_data", "already_covered",
-                       "added_target", "new_group", "not_applicable"}
+                       "added_target", "new_group", "not_applicable", "not_applicable_after_change", "mixed_after_change"}
             if (not required or Counter(row.get("key") for row in rows) != Counter(required)
                     or any(row.get("status") not in allowed or not row.get("reason")
                            or row.get("second_review_confirmed") is not True for row in rows)):
@@ -77,6 +82,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     expected_active: set[str] = set()
     expected_explanations: set[str] = set()
     expected_blue: dict[str, str] = {}
+    expected_preserved: dict[str, str] = {}
     owned_changes: set[str] = protocol_all_owned & (changed | created)
     added_keys: set[tuple[str, ...]] = set()
     for finding in findings:
@@ -87,7 +93,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         protocol_owned = protocol_state["owned_by_main_id"].get(source.get("main_text_id"), set())
         protocol_layers = protocol_state["layers_by_main_id"].get(source.get("main_text_id"), {})
         protocol_status = protocol_physical.get(source.get("main_text_id"))
-        if (protocol_status is not None and status in {"resolved", "partially_resolved", "unresolved", "insufficient_data"}
+        if (protocol_status is not None and status in {"resolved", "partially_resolved", "unresolved", "insufficient_data", "not_applicable_after_change", "mixed_after_change"}
                 and protocol_status != status):
             errors.append(f"{label}: фактический статус в протоколе не совпадает с проверкой планов")
         group_ids = {source.get(key) for key in ("main_text_id", "number_id", "frame_id")}
@@ -131,15 +137,26 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
             errors.append(f"{label}: не охвачены все исходные лучи")
         if new_group:
             trace = finding.get("template_copy", {})
-            for key in ("source_group_fully_detected", "left_explanation_checked", "left_explanation_copied_when_present",
-                        "text_styles_preserved", "relative_positions_preserved", "repeated_floor_group_copied_from_actualized_group"):
-                if trace.get(key) is not True:
-                    errors.append(f"{label}: не подтверждено копирование шаблона: {key}")
-            if (trace.get("source_kind") not in {"source_approved_block", "previous_actualized_compliance_group"}
-                    or len(set(trace.get("source_entity_ids", []))) < 3 or not group_ids <= created
+            approved_text = trace.get("source_kind") == "approved_rule_text"
+            if approved_text:
+                errors.extend(f"{label}: {error}" for error in approved_rule_text_errors(trace, registry.get("eligible_rule_text_sources")))
+                if source.get("full_text") != trace.get("approved_rule_text", {}).get("full_text"):
+                    errors.append(f"{label}: текст новой группы не совпадает с полным утверждённым источником")
+            else:
+                for key in ("source_group_fully_detected", "left_explanation_checked", "left_explanation_copied_when_present",
+                            "text_styles_preserved", "relative_positions_preserved", "repeated_floor_group_copied_from_actualized_group"):
+                    if trace.get(key) is not True:
+                        errors.append(f"{label}: не подтверждено копирование шаблона: {key}")
+            if ((not approved_text and (trace.get("source_kind") not in {"source_approved_block", "previous_actualized_compliance_group"}
+                    or len(set(trace.get("source_entity_ids", []))) < 3)) or not group_ids <= created
                     or len(added_targets) != len(targets) or source.get("ray_ids")):
                 errors.append(f"{label}: новая группа должна быть полной копией с новыми целями")
             active_additions.update(group_ids)
+            marker_ids = {handle for handle, row in markers.items() if row.get("main_text_id") == source.get("main_text_id")
+                          and row.get("cycle_id") == registry.get("cycle_id")}
+            if policy_v2 and strict and (len(marker_ids) != 1 or not marker_ids <= created):
+                errors.append(f"{label}: новая группа должна иметь одно облако новизны текущего цикла")
+            active_additions.update(marker_ids)
         if added_targets:
             comment = finding.get("addition_comment", {})
             explanation_ids = set(comment.get("entity_ids", []))
@@ -159,10 +176,29 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
             errors.append(f"{label}: остались непроверенные цели")
         all_resolved = bool(states) and all(state == "resolved" for state in states)
         some_resolved = "resolved" in states
+        any_inapplicable = "not_applicable_after_change" in states
+        all_inapplicable = bool(states) and all(state == "not_applicable_after_change" for state in states)
+        if (status == "not_applicable_after_change") != all_inapplicable:
+            errors.append(f"{label}: неприменимость всей группы требует утраты применимости всех целей")
+        if (status == "mixed_after_change") != (any_inapplicable and not all_inapplicable):
+            errors.append(f"{label}: смешанные цели с утратой применимости должны иметь статус mixed_after_change")
+        if any_inapplicable and strict and finding.get("status_breakdown") != dict(Counter(states)):
+            errors.append(f"{label}: утрата применимости требует точной сводки всех целевых статусов")
+        if any_inapplicable and finding.get("all_requirements_resolved") is True:
+            errors.append(f"{label}: неприменимость и смешанный статус не подтверждают устранение всех требований")
         if (status == "resolved") != all_resolved:
             errors.append(f"{label}: вся группа закрывается только после всех целей")
-        if (status == "partially_resolved") != (some_resolved and not all_resolved):
+        if (status == "partially_resolved") != (some_resolved and not all_resolved and not any_inapplicable):
             errors.append(f"{label}: неверно отражено частичное устранение")
+        if any_inapplicable:
+            preserve_ids = group_ids | set().union(*(set(t.get("graphic_ids", [])) | ({t["ray_id"]} if t.get("ray_id") else set())
+                                                    for t in targets if t.get("status") == "not_applicable_after_change"))
+            for handle in preserve_ids - set(protocol_layers):
+                layer = before.get(handle, {}).get("layer")
+                if strict and not layer:
+                    errors.append(f"{label}: отсутствует исходный слой неприменимой цели/смешанной группы {handle}")
+                if layer:
+                    expected_preserved[handle] = layer
         returnable = group_ids | set(source.get("related_graphic_ids", []))
         shared_returned = set(source.get("shared_graphic_ids", [])) & returned
         for handle in shared_returned:
@@ -172,7 +208,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 errors.append(f"{label}: не подтверждена общая графика возвращаемой цели")
         if returned:
             evidence = finding.get("return_evidence", {})
-            if status not in {"unresolved", "partially_resolved"} or "unresolved" not in states:
+            if status not in {"unresolved", "partially_resolved", "mixed_after_change"} or "unresolved" not in states:
                 errors.append(f"{label}: возврат требует фактически неустранённой цели")
             if any(not evidence.get(key) for key in ("project_entity_ids", "method", "result", "normative_basis")):
                 errors.append(f"{label}: нет проектного и нормативного обоснования возврата")
@@ -205,6 +241,13 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                     active_additions.update(target_ids)
             if strict and not target.get("reason"):
                 errors.append(f"{label}: у цели отсутствует конкретное основание")
+            if target.get("status") == "not_applicable_after_change":
+                proof = target.get("applicability_change", {})
+                if not isinstance(proof, dict) or any(not proof.get(key) for key in
+                        ("before", "after", "project_entity_ids", "change_reference", "normative_basis")):
+                    errors.append(f"{label}: утрата применимости требует прежнего/нового состояния, изменения плана и основания")
+                if target.get("origin") == "added_target" or target.get("returned_entity_ids"):
+                    errors.append(f"{label}: утрата применимости не является новым нарушением или возвратом")
             target_returned = set(target.get("returned_entity_ids", []))
             if not target_returned <= target_ids & returned:
                 errors.append(f"{label}: возврат цели не совпадает с её графикой и журналом группы")
@@ -222,7 +265,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 if not evidence.get("project_entity_ids") or not evidence.get("method") or not evidence.get("result"):
                     errors.append(f"{label}: устранение не подтверждено проектными объектами и проверкой")
                 if not blue_group:
-                    expected_green.update(target_ids - shared_returned - set(protocol_layers))
+                    expected_green.update(target_ids - shared_returned - set(protocol_layers) - set(expected_preserved))
             elif (target_ids & changed) - target_returned:
                 # Restoring an old STU ray from an erroneously green layer to its
                 # original blue group is a graphics correction, not a resolution
@@ -238,7 +281,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         expected_active.update(active_additions - protocol_owned)
         expected_explanations.update(explanation_ids - protocol_owned)
         expected_green.update((finding_changes | finding_created) - returned - reopened - active_additions - explanation_ids
-                              - set(expected_blue) - protocol_owned)
+                              - set(expected_blue) - protocol_owned - set(expected_preserved))
         expected_returned.update(returned)
         if not reopened <= finding_changes or not active_additions <= finding_created or not explanation_ids <= finding_changes | finding_created:
             errors.append(f"{label}: дополнения не совпадают с журналом группы")
@@ -248,7 +291,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
             expected_green.update(group_ids - set(protocol_layers))
         elif not blue_group and (group_ids & changed) - returned - reopened - protocol_owned:
             errors.append(f"{label}: незакрытая группа целиком переведена в устранённые")
-        elif (not blue_group and strict and status != "resolved"
+        elif (not blue_group and strict and status != "resolved" and not any_inapplicable
               and not (source_layer in RESOLVED_SOURCE_LAYERS and not group_ids & changed)
               and any(verified.get(handle, {}).get("layer") in {None, *RESOLVED_SOURCE_LAYERS}
                       for handle in group_ids - set(protocol_layers))):
@@ -263,28 +306,31 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     for handles, layer in ((expected_active, ACTIVE_LAYER), (expected_explanations, "экспертиза пояснения")):
         for handle in handles:
             entity = verified.get(handle, {})
-            if (entity.get("layer") != layer or entity.get("colorIndex") != 256
+            if (entity.get("layer") != layer or entity.get("colorIndex") != (2 if handle in markers else 256)
                     or entity.get("linetype") != "ByLayer" or entity.get("lineWeight") != "ByLayer"):
                 errors.append(f"{handle}: не подтверждён слой дополнения {layer} и ByLayer")
     for handle in expected_returned:
         entity = verified.get(handle, {})
         if before.get(handle, {}).get("layer") not in RESOLVED_SOURCE_LAYERS:
             errors.append(f"{handle}: не подтверждён исходный слой устранения перед возвратом")
-        if (entity.get("layer") != ACTIVE_LAYER or entity.get("colorIndex") != 256
+        if (entity.get("layer") != ACTIVE_LAYER or entity.get("colorIndex") != (2 if handle in markers else 256)
                 or entity.get("linetype") != "ByLayer" or entity.get("lineWeight") != "ByLayer"):
             errors.append(f"{handle}: не подтверждён возврат в экспертиза со свойствами ByLayer")
     for handle in expected_green:
         entity = verified.get(handle, {})
-        if (entity.get("layer") != RESOLVED_LAYER or entity.get("colorIndex") != 256
+        if (entity.get("layer") != RESOLVED_LAYER or entity.get("colorIndex") != (2 if handle in markers else 256)
                 or entity.get("linetype") != "ByLayer" or entity.get("lineWeight") != "ByLayer"):
             errors.append(f"{handle}: нет повторного подтверждения зелёного слоя и свойств ByLayer")
     for handle, layer in expected_blue.items():
         entity = verified.get(handle, {})
         if entity.get("layer") != layer:
             errors.append(f"{handle}: группа СТУ или её луч вышли из исходного синего слоя {layer}")
-        if handle in created and (entity.get("colorIndex") != 256 or entity.get("linetype") != "ByLayer"
+        if handle in created and (entity.get("colorIndex") != (2 if handle in markers else 256) or entity.get("linetype") != "ByLayer"
                                   or entity.get("lineWeight") != "ByLayer"):
             errors.append(f"{handle}: новый луч СТУ должен иметь свойства ByLayer")
+    for handle, layer in expected_preserved.items():
+        if verified.get(handle, {}).get("layer") != layer:
+            errors.append(f"{handle}: утрата применимости не разрешает менять исходный слой")
     layer_check = registry.get("graphics_layer_check", {}).copy()
     if strict:
         if layer_check.get("resolved_layer_color") != 3:

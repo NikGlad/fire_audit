@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from .instruction_contracts import approved_rule_text_errors
 
 
 NON_VIOLATION = {"compliant", "not_applicable", "insufficient_data", "not_reviewed"}
@@ -320,9 +321,93 @@ def _issued_graphics_required(finding: dict[str, Any]) -> bool:
     )
 
 
+def _result_graphics_rows(autocad: dict[str, Any]) -> list | None:
+    created, reused = autocad.get("created_objects", []), autocad.get("reused_objects", [])
+    return created + reused if isinstance(created, list) and isinstance(reused, list) else None
+
+
+def _reused_object_valid(item: dict[str, Any]) -> bool:
+    action = item.get("action", "reused")
+    before = item.get("properties_before")
+    required = {"layer", "color_by_layer", "linetype_by_layer", "lineweight_by_layer"}
+    if (action not in {"reused", "modified", "unchanged"} or not item.get("original_layer")
+            or item.get("existing_object_verified") is not True or item.get("properties_re_read") is not True
+            or not isinstance(before, dict) or not required.issubset(before)
+            or before["layer"] != item["original_layer"] or not item.get("layer")
+            or any(type(before[key]) is not bool or type(item.get(key)) is not bool
+                   for key in required - {"layer"})):
+        return False
+    changes = item.get("changes", [])
+    if action != "modified":
+        return not changes and all(key in item and item[key] == value for key, value in before.items())
+    if not isinstance(changes, list) or not changes:
+        return False
+    recorded = set()
+    for change in changes:
+        if not isinstance(change, dict) or not {"property", "before", "after"}.issubset(change):
+            return False
+        key = change["property"]
+        if (not isinstance(key, str) or key in recorded or key not in before or key not in item
+                or before[key] != change["before"] or item[key] != change["after"]
+                or change["before"] == change["after"]):
+            return False
+        recorded.add(key)
+    return recorded == {key for key, value in before.items() if key not in item or item[key] != value}
+
+
+def _preserved_analysis_graphic(item: dict[str, Any], finding: dict[str, Any]) -> bool:
+    """Original project evidence does not replace issued expert graphics."""
+    return (item.get("usage") == "analysis_only" and item.get("source_kind") == "project_geometry"
+            and _preserved_existing_graphic(item, finding))
+
+
+def _preserved_existing_graphic(item: dict[str, Any], finding: dict[str, Any]) -> bool:
+    """Unaddressed measurements stay in their original layer; targets inherit their source."""
+    if (item.get("action", "reused") == "modified"
+            or item.get("role") not in {"dimension", "measurement_line", "measurement_polyline", "cloud", "contour"}):
+        return False
+    return ((item.get("source_kind") == "project_geometry" and item.get("usage") == "analysis_only")
+            or (item.get("source_kind") == "existing_measurement"
+                and item.get("layer") == "экспертиза обмеры"
+                and not item.get("source_entity_id")
+                and str(item.get("entity_id")) not in {
+                    str(value) for value in finding.get("autocad", {}).get("target_entity_ids", [])} ))
+
+
+def _source_layer_for_graphic(item: dict[str, Any], finding: dict[str, Any]) -> str | None:
+    """Resolve an exact layer from the reread source record, never an unbacked override."""
+    autocad = finding.get("autocad", {})
+    reused = autocad.get("reused_objects", [])
+    if item in reused and item.get("role") in {"main_text", "purple_explanation", "solution_variant"}:
+        return item.get("original_layer") if _reused_object_valid(item) else None
+    source_id = item.get("source_entity_id")
+    if source_id:
+        sources = [row for row in (_result_graphics_rows(autocad) or []) if isinstance(row, dict)
+                   and str(row.get("entity_id")) == str(source_id)
+                   and row.get("role") in {"main_text", "purple_explanation"}]
+        if len(sources) != 1 or str(source_id) == str(item.get("entity_id")):
+            return None
+        source = sources[0]
+        if source in reused:
+            if not _reused_object_valid(source) or source.get("layer") != source.get("original_layer"):
+                return None
+        elif source.get("layer") != (PURPLE_EXPLANATIONS_LAYER if source["role"] in PURPLE_OBJECT_ROLES else VIOLATION_GRAPHICS_LAYER):
+            return None
+        return source["layer"] if item.get("source_layer") == source.get("layer") else None
+    if item.get("source_layer"):
+        return None
+    if item.get("role") in PURPLE_OBJECT_ROLES:
+        return PURPLE_EXPLANATIONS_LAYER
+    main_sources = [row for row in reused if isinstance(row, dict) and row.get("role") == "main_text"
+                    and _reused_object_valid(row) and row.get("layer") == row.get("original_layer")]
+    if len(main_sources) == 1:
+        return main_sources[0]["layer"]
+    return VIOLATION_GRAPHICS_LAYER
+
+
 def _created_graphics_state(finding: dict[str, Any]) -> dict[str, Any]:
     autocad = finding.get("autocad", {})
-    objects = autocad.get("created_objects", [])
+    objects = _result_graphics_rows(autocad)
     state = {
         "valid_list": isinstance(objects, list),
         "violation_ok": True,
@@ -341,18 +426,24 @@ def _created_graphics_state(finding: dict[str, Any]) -> dict[str, Any]:
             continue
         entity_id = str(item.get("entity_id", "")).strip()
         role = str(item.get("role", "")).strip()
-        if entity_id:
+        if entity_id and not _preserved_analysis_graphic(item, finding):
             state["checked_entity_ids"].append(entity_id)
             state["roles_by_id"].setdefault(entity_id, []).append(role)
+        if item in autocad.get("reused_objects", []):
+            if not _reused_object_valid(item):
+                state["violation_ok"] = state["purple_ok"] = False
+            if _preserved_existing_graphic(item, finding):
+                continue
         correct_properties = all(
             item.get(key) is True
             for key in ("color_by_layer", "linetype_by_layer", "lineweight_by_layer")
         )
+        expected_layer = _source_layer_for_graphic(item, finding)
         if role in PURPLE_OBJECT_ROLES:
-            if item.get("layer") != PURPLE_EXPLANATIONS_LAYER or not correct_properties:
+            if not expected_layer or item.get("layer") != expected_layer or not correct_properties:
                 state["purple_ok"] = False
         else:
-            if item.get("layer") != VIOLATION_GRAPHICS_LAYER or not correct_properties:
+            if not expected_layer or item.get("layer") != expected_layer or not correct_properties:
                 state["violation_ok"] = False
     return state
 
@@ -361,14 +452,14 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     finding_id = str(finding.get("id") or "без id")
     autocad = finding.get("autocad", {})
-    objects = autocad.get("created_objects", [])
+    objects = _result_graphics_rows(autocad)
     state = _created_graphics_state(finding)
     if not state["valid_list"]:
         return [f"{finding_id}: реестр созданных объектов должен быть списком"]
 
     seen: set[str] = set()
     for index, item in enumerate(objects, start=1):
-        prefix = f"{finding_id}: созданный объект {index}"
+        prefix = f"{finding_id}: объект результата {index}"
         if not isinstance(item, dict):
             errors.append(f"{prefix}: запись имеет неверный формат")
             continue
@@ -395,7 +486,19 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
         if role in TEXT_OBJECT_ROLES and not str(item.get("text_style", "")).strip():
             errors.append(f"{prefix}: для текстового объекта не записан сохранённый текстовый стиль")
 
-        expected_layer = PURPLE_EXPLANATIONS_LAYER if role in PURPLE_OBJECT_ROLES else VIOLATION_GRAPHICS_LAYER
+        if item in autocad.get("reused_objects", []):
+            if not _reused_object_valid(item):
+                errors.append(f"{prefix}: не подтверждены происхождение, снимок свойств и точные изменения до/после существующего объекта")
+            if item.get("source_kind") == "project_geometry" and item.get("action") == "modified":
+                errors.append(f"{prefix}: исходную проектную графику изменять нельзя")
+            if _preserved_existing_graphic(item, finding):
+                continue
+        elif item.get("action", "created") != "created":
+            errors.append(f"{prefix}: существующий объект нельзя записывать в created_objects")
+
+        expected_layer = _source_layer_for_graphic(item, finding)
+        if not expected_layer:
+            errors.append(f"{prefix}: не подтверждены AutoCAD-id и точный слой исходного объекта графики")
         if item.get("layer") != expected_layer:
             errors.append(f"{prefix}: требуется точный слой {expected_layer}")
         for key, label in (
@@ -407,9 +510,10 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
                 errors.append(f"{prefix}: {label} должен быть ByLayer")
 
     if _issued_graphics_required(finding) and autocad.get("status") in {"applied", "post_checked"}:
+        objects = [item for item in objects if not isinstance(item, dict) or not _preserved_analysis_graphic(item, finding)]
         verification = autocad.get("layer_verification", {})
         if not objects:
-            errors.append(f"{finding_id}: после нанесения не зарегистрированы созданные объекты")
+            errors.append(f"{finding_id}: после нанесения не зарегистрированы объекты результата")
         if verification.get("all_created_objects_collected") is not True:
             errors.append(f"{finding_id}: не подтверждено, что собраны все созданные объекты")
         if verification.get("checked_against_autocad") is not True:
@@ -472,7 +576,7 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_compliance_source_copy(finding: dict[str, Any]) -> list[str]:
+def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: list[dict] | None = None) -> list[str]:
     errors: list[str] = []
     if finding.get("mode") != "compliance" or not _issued_graphics_required(finding):
         return errors
@@ -481,6 +585,20 @@ def _validate_compliance_source_copy(finding: dict[str, Any]) -> list[str]:
     autocad = finding.get("autocad", {})
     source_group = autocad.get("source_group", {})
     prefix = f"{finding_id}: исходная группа замечания"
+
+    if source_group.get("copy_source") == "approved_rule_text":
+        errors.extend(f"{prefix}: {error}" for error in approved_rule_text_errors(source_group, eligible_sources))
+        if finding.get("output", {}).get("remark_text") != source_group.get("approved_rule_text", {}).get("full_text"):
+            errors.append(f"{prefix}: выдаваемый текст не совпадает с полным утверждённым источником")
+        if source_group.get("copy_method") != "approved_text_with_verified_format_sample":
+            errors.append(f"{prefix}: требуется отдельный метод approved_text_with_verified_format_sample")
+        if source_group.get("approved_block_header_entity_id") or source_group.get("remark_text_entity_ids"):
+            errors.append(f"{prefix}: нельзя приписывать утверждённому тексту отсутствующий исходный блок DWG")
+        if not source_group.get("new_floor") or _normalize_floor(source_group.get("new_floor")) != _normalize_floor(autocad.get("floor")):
+            errors.append(f"{prefix}: не подтверждён этаж новой группы")
+        if source_group.get("text_styles_preserved") is not True or source_group.get("relative_positions_preserved") is not True:
+            errors.append(f"{prefix}: не подтверждено сохранение оформления полного образца")
+        return errors
 
     if not str(source_group.get("source_template_key", "")).strip():
         errors.append(f"{prefix}: не указан устойчивый идентификатор шаблона замечания")
@@ -530,6 +648,18 @@ def _validate_compliance_source_copy(finding: dict[str, Any]) -> list[str]:
             )
         if not str(source_group.get("previous_actualized_group_finding_id", "")).strip():
             errors.append(f"{prefix}: не указана ранее актуализированная группа-источник")
+        if autocad.get("instruction_policy_version", 1) >= 2:
+            reconciliation = source_group.get("content_reconciliation", {})
+            if (not isinstance(reconciliation, dict) or not reconciliation.get("full_template_reference")
+                    or not reconciliation.get("full_template_text") or reconciliation.get("checked_for_current_floor") is not True
+                    or not isinstance(reconciliation.get("restored_branches"), list)):
+                errors.append(f"{prefix}: повторный этаж требует сверки содержания с полным неизменённым шаблоном")
+            else:
+                for restored in reconciliation["restored_branches"]:
+                    if (not isinstance(restored, dict) or not restored.get("source_fragment") or not restored.get("reason")
+                            or restored.get("result_fragment") != restored.get("source_fragment")
+                            or restored["source_fragment"] not in reconciliation["full_template_text"]):
+                        errors.append(f"{prefix}: восстановленная ветка должна быть точным фрагментом полного шаблона с основанием")
 
     if source_group.get("copy_method") != "copy_existing_complete_group":
         errors.append(f"{prefix}: требуется копирование существующей полной группы")
@@ -598,7 +728,7 @@ def _validate_compliance_source_copy(finding: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_finding(finding: dict[str, Any], for_application: bool = False) -> tuple[list[str], list[str]]:
+def validate_finding(finding: dict[str, Any], for_application: bool = False, *, eligible_rule_text_sources: list[dict] | None = None) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     finding_id = finding.get("id") or "без id"
@@ -818,6 +948,12 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
         if is_stage and output.get("stage_element_kind") == "explanation"
         else VIOLATION_GRAPHICS_LAYER
     )
+    existing_main_role = "purple_explanation" if is_stage and output.get("stage_element_kind") == "explanation" else "main_text"
+    existing_main = [row for row in autocad.get("reused_objects", [])
+                     if isinstance(row, dict) and row.get("role") == existing_main_role and _reused_object_valid(row)
+                     and row.get("layer") == row.get("original_layer")]
+    if len(existing_main) == 1:
+        expected_main_layer = existing_main[0]["original_layer"]
     if (issued_output or stage_is_issued) and autocad.get("layer") != expected_main_layer:
         errors.append(f"{finding_id}: для основной группы требуется точный слой {expected_main_layer}")
     errors.extend(_validate_created_graphics(finding))
@@ -825,7 +961,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False) -> 
         errors.append(f"{finding_id}: лучи замечания должны иметь одну начальную точку")
     if for_application:
         errors.extend(_validate_individual_analysis(finding))
-        errors.extend(_validate_compliance_source_copy(finding))
+        errors.extend(_validate_compliance_source_copy(finding, eligible_rule_text_sources))
         if status != "violation" and not is_general and not non_issue_required and not stage_is_issued:
             errors.append(f"{finding_id}: отсутствует результат, разрешённый для нанесения")
         if non_issue_required and non_issue_note_present:
@@ -944,7 +1080,8 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
     checked_entity_ids: list[str] = []
     seen_findings: dict[str, dict[str, Any]] = {}
     for finding in registry.get("findings", []):
-        item_errors, item_warnings = validate_finding(finding, for_application=for_application)
+        item_errors, item_warnings = validate_finding(finding, for_application=for_application,
+                                                     eligible_rule_text_sources=registry.get("eligible_rule_text_sources"))
         errors.extend(item_errors)
         warnings.extend(item_warnings)
         graphics_state = _created_graphics_state(finding)
@@ -978,7 +1115,7 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
         if _issued_graphics_required(finding) and autocad.get("status") in {"applied", "post_checked"}:
             verification = autocad.get("layer_verification", {})
             if (
-                not autocad.get("created_objects")
+                not _result_graphics_rows(autocad)
                 or verification.get("all_created_objects_collected") is not True
                 or verification.get("checked_against_autocad") is not True
                 or verification.get("all_violation_graphics_on_expertise_layer") is not True
