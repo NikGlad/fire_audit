@@ -1,7 +1,6 @@
 """Evidence that the ОБ-07 mechanical migration preserves approved instructions."""
 from __future__ import annotations
 
-import copy
 import importlib.util
 import json
 import re
@@ -26,6 +25,27 @@ class RuleRegistryMigrationTests(unittest.TestCase):
         cls.manifest = json.loads(MIGRATION.read(cls.knowledge / "history/migration_20261026.json"))
         cls.catalogue = json.loads(MIGRATION.read(cls.knowledge / "rule_blocks.json"))
         cls.rules = {r["id"]: r for r in cls.catalogue["rules"]}
+        # Historical migration evidence must not compare against legitimately
+        # edited live rules. Reconstruct the initial migration once per class.
+        cls.initial_folder = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.initial_folder.cleanup)
+        initial_root = cls.prepare_archived_source(Path(cls.initial_folder.name))
+        result = MIGRATION.migration(initial_root, Path(cls.initial_folder.name) / "output")
+        if result["already_migrated"]:
+            raise AssertionError("Historical fixture must be a fresh migration")
+        cls.initial_knowledge = initial_root / "knowledge"
+        cls.initial_catalogue = json.loads(MIGRATION.read(cls.initial_knowledge / "rule_blocks.json"))
+        cls.initial_rules = {r["id"]: r for r in cls.initial_catalogue["rules"]}
+
+    @classmethod
+    def prepare_archived_source(cls, folder):
+        root = folder / "app"
+        (root / "knowledge").mkdir(parents=True)
+        (root / "fire_audit").mkdir()
+        (root / "fire_audit/knowledge.py").write_bytes((ROOT / "fire_audit/knowledge.py").read_bytes())
+        for path in cls.archive.iterdir():
+            (root / "knowledge" / path.name).write_bytes(path.read_bytes())
+        return root
 
     def test_all_33_documents_expand_exactly_except_manifest_changes(self):
         sources = list(self.archive.glob("*.md"))
@@ -37,7 +57,7 @@ class RuleRegistryMigrationTests(unittest.TestCase):
                     if replacement["document"] == path.name:
                         self.assertEqual(expected.count(replacement["old_text"]), 1)
                         expected = expected.replace(replacement["old_text"], replacement["new_text"], 1)
-                actual = MIGRATION.expand(MIGRATION.read(self.knowledge / path.name), self.rules)
+                actual = MIGRATION.expand(MIGRATION.read(self.initial_knowledge / path.name), self.initial_rules)
                 self.assertEqual(actual, expected)
 
     def test_archive_is_byte_exact_and_contains_only_common_sources(self):
@@ -48,8 +68,8 @@ class RuleRegistryMigrationTests(unittest.TestCase):
 
     def test_active_overrides_preserve_full_text_and_every_metadata_field(self):
         old = json.loads(MIGRATION.read(self.archive / "rule_overrides.json"))["rules"]
-        current = {r["id"]: r for r in json.loads(MIGRATION.read(self.knowledge / "rule_overrides.json"))["rules"]}
-        history = {r["id"]: r for r in json.loads(MIGRATION.read(self.knowledge / "history/overrides_20261026.json"))["rules"]}
+        current = {r["id"]: r for r in json.loads(MIGRATION.read(self.initial_knowledge / "rule_overrides.json"))["rules"]}
+        history = {r["id"]: r for r in json.loads(MIGRATION.read(self.initial_knowledge / "history/overrides_20261026.json"))["rules"]}
         expected_effective = MIGRATION.effective_modes(old, list(MIGRATION.mode_files(ROOT)))
         self.assertEqual(set(current), {r["id"] for r in old})
         for row in old:
@@ -60,8 +80,8 @@ class RuleRegistryMigrationTests(unittest.TestCase):
                         self.assertEqual(revised[key], value)
                 self.assertNotIn("text", revised)
                 if expected_effective[row["id"]]:
-                    self.assertEqual(MIGRATION.expand(self.rules[revised["text_ref"]]["text"], self.rules), row["text"])
-                    self.assertIn(row["id"], self.rules[revised["text_ref"]]["legacy_override_ids"])
+                    self.assertEqual(MIGRATION.expand(self.initial_rules[revised["text_ref"]]["text"], self.initial_rules), row["text"])
+                    self.assertIn(row["id"], self.initial_rules[revised["text_ref"]]["legacy_override_ids"])
                 else:
                     self.assertNotIn("text_ref", revised)
                     self.assertEqual(revised["history_ref"], "history/overrides_20261026.json#" + row["id"])
@@ -82,7 +102,9 @@ class RuleRegistryMigrationTests(unittest.TestCase):
             path = next(self.knowledge.glob(prefix + "*.md"))
             self.assertEqual(MIGRATION.read(path).count("{{rule:" + key + "}}"), 1)
         self.assertEqual(set(self.rules[key]["modes"]), {"actualization_protocol", "protocol"})
-        protocol = MIGRATION.expand(self.rules[key]["text"], self.rules)
+        # Exact line count and original clauses describe the initial migration;
+        # the current shared source and its consumers are checked above.
+        protocol = MIGRATION.expand(self.initial_rules[key]["text"], self.initial_rules)
         self.assertEqual(len(protocol.splitlines()), 146)
         self.assertIn("comment_required: false", protocol)
         self.assertIn("accepted_commitment", protocol)
@@ -90,17 +112,17 @@ class RuleRegistryMigrationTests(unittest.TestCase):
 
     def test_auto_checklists_have_all_23_sections_and_keep_scope_text(self):
         groups = {}
-        for rule in self.rules.values():
+        for rule in self.initial_rules.values():
             if rule.get("checklist_group"):
                 groups.setdefault(rule["checklist_group"], set()).add(rule["checklist_id"])
         self.assertEqual(groups["КО"], {f"КО-{i:02d}" for i in range(1, 14)})
         self.assertEqual(groups["РО"], {f"РО-{i:02d}" for i in range(1, 11)})
-        source = MIGRATION.expand(MIGRATION.read(next(self.knowledge.glob("08_*.md"))), self.rules)
+        source = MIGRATION.expand(MIGRATION.read(next(self.initial_knowledge.glob("08_*.md"))), self.initial_rules)
         self.assertIn("{{checklist:КО}}", source)
         self.assertIn("{{checklist:РО}}", source)
         self.assertNotIn("КО-01–КО-12", source)
         self.assertNotIn("РО-01–РО-08", source)
-        self.assertIn("Ф1.1", MIGRATION.expand(self.rules["error_ro_09"]["text"], self.rules))
+        self.assertIn("Ф1.1", MIGRATION.expand(self.initial_rules["error_ro_09"]["text"], self.initial_rules))
 
     def test_every_reference_has_valid_dependency_and_mode_coverage(self):
         resolver = RuleResolver(self.catalogue)
@@ -130,17 +152,12 @@ class RuleRegistryMigrationTests(unittest.TestCase):
 
     def test_second_migration_is_noop_and_keeps_later_editor_changes(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / "app"
-            (root / "knowledge").mkdir(parents=True)
-            (root / "fire_audit").mkdir()
-            (root / "fire_audit/knowledge.py").write_bytes((ROOT / "fire_audit/knowledge.py").read_bytes())
-            for path in self.archive.iterdir():
-                (root / "knowledge" / path.name).write_bytes(path.read_bytes())
+            root = self.prepare_archived_source(Path(folder))
             first = MIGRATION.migration(root, Path(folder) / "output")
             self.assertFalse(first["already_migrated"])
             registry = root / "knowledge/rule_blocks.json"
             modified = json.loads(MIGRATION.read(registry))
-            self.assertEqual(modified, self.catalogue)
+            self.assertEqual(modified, self.initial_catalogue)
             modified["rules"][0]["title"] += " — поздняя редакция"
             registry.write_text(MIGRATION.dump(modified), encoding="utf-8")
             before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
