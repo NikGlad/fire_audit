@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fire_audit.core import FireAuditApp
 from fire_audit.io_utils import read_json
 from fire_audit.runs import MODE_LABELS
+from fire_audit.rule_registry import RuleResolver
 
 
 class RunRuleSnapshotTests(unittest.TestCase):
@@ -29,6 +30,16 @@ class RunRuleSnapshotTests(unittest.TestCase):
             project['classification']['fire_resistance_degree'] = degree
             project.setdefault('barrier_assessment', {})['rooms'] = [{'number': number, 'category': category}]
             self.app.projects.save(slug, project)
+
+    def append_canonical_text(self, document, marker):
+        path = self.root / 'knowledge/rule_blocks.json'
+        catalogue = read_json(path)
+        source = (self.root / 'knowledge' / document).read_text(encoding='utf-8')
+        rule_id = next(key for kind, key in RuleResolver.references(source) if kind == 'rule')
+        rule = next(row for row in catalogue['rules'] if row['id'] == rule_id)
+        if marker not in rule['text']:
+            rule['text'] += '\n' + marker
+            path.write_text(json.dumps(catalogue, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
     def assert_consistent_artifacts(self, result):
         run = result['run']
@@ -179,13 +190,11 @@ class RunRuleSnapshotTests(unittest.TestCase):
     def test_update_during_creation_does_not_mix_rule_versions(self):
         mode = 'barrier_assessment'
         snapshot = self.app.knowledge.snapshot_for_mode(mode)
-        path = self.root / 'knowledge/18_ОЦЕНКА_ПРЕГРАД.md'
         marker = 'Дополнительный общий контроль согласованности нового правила.'
         quality_markdown = self.app.runs._quality_markdown
 
         def update_then_render(run):
-            if marker not in path.read_text(encoding='utf-8'):
-                path.write_text(path.read_text(encoding='utf-8') + '\n' + marker + '\n', encoding='utf-8')
+            self.append_canonical_text('18_ОЦЕНКА_ПРЕГРАД.md', marker)
             return quality_markdown(run)
 
         with patch.object(self.app.runs, '_quality_markdown', side_effect=update_then_render):
@@ -215,10 +224,8 @@ class RunRuleSnapshotTests(unittest.TestCase):
             Path(result['folder']) / 'ПРАВИЛА_ЗАПУСКА.md',
         )]
         history = {path: path.read_bytes() for path in old_paths}
-        instruction = self.root / 'knowledge/03_ОЦЕНКА_СООТВЕТСТВИЯ.md'
         marker = 'Общее уточнение: адресат определяется по геометрии текущего плана.'
-        instruction.write_text(instruction.read_text(encoding='utf-8') + '\n' + marker + '\n',
-                               encoding='utf-8')
+        self.append_canonical_text('03_ОЦЕНКА_СООТВЕТСТВИЯ.md', marker)
         digests = set()
         for slug, own, other in (('first', 'PRIVATE-101', 'PRIVATE-909'),
                                  ('second', 'PRIVATE-909', 'PRIVATE-101')):

@@ -271,13 +271,17 @@ class ReviewControl:
         if relative_path.startswith("knowledge/"):
             if page != 1 or offset < 0:
                 raise ValueError("У файла инструкции одна текстовая часть; offset должен быть неотрицательным")
-            doc = self.app.knowledge.load_document(relative_path[len("knowledge/"):])
+            name = relative_path[len("knowledge/"):]
+            text_all = self.app.knowledge.resolved_document(name)
+            # This hash identifies the effective composite text, not one raw include wrapper.
+            source_hash = hashlib.sha256(text_all.encode("utf-8")).hexdigest()
             length = max(1000, min(int(max_chars), 40000))
-            text = doc.text[offset:offset+length]
-            return {"relative_path": relative_path, "source_sha256": doc.sha256, "source_matches_index": True,
+            text = text_all[offset:offset+length]
+            return {"relative_path": relative_path, "source_sha256": source_hash, "source_matches_index": True,
                     "source_kind": "user_instruction_not_normative_document", "full_text_complete": True,
-                    "visual_review_required": False, "text": text, "offset": offset, "total_chars": len(doc.text),
-                    "next_offset": offset+len(text) if offset+len(text) < len(doc.text) else None}
+                     "hash_kind": "effective_instruction_utf8",
+                     "visual_review_required": False, "text": text, "offset": offset, "total_chars": len(text_all),
+                     "next_offset": offset+len(text) if offset+len(text) < len(text_all) else None}
         return self.app.norms.read_document(relative_path, page, offset, max_chars)
 
     def reading_errors(self, state, item, pass_number):

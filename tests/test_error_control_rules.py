@@ -17,26 +17,26 @@ class ErrorControlRulesTests(unittest.TestCase):
 
     def test_request_numbering_conflict_removed(self):
         for name in ('03_ОЦЕНКА_СООТВЕТСТВИЯ.md', '08_САМОПРОВЕРКА.md'):
-            text = self.knowledge.load_document(name).text
+            text = self.knowledge.resolved_document(name)
             self.assertNotIn('Запросы, пояснения, зелёные обоснования отказа', text)
             self.assertNotIn('запросы, пояснения и зелёные обоснования отдельно не пронумерованы', text)
             self.assertIn('сквозн', text)
 
     def test_templates_and_read_only_are_protected(self):
-        text = self.knowledge.load_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md').text
+        text = self.knowledge.resolved_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md')
         for phrase in ('не разрешает запись в режиме только чтения', 'Исходный шаблон в блоке сохранять полностью', 'Старые реестры не переписывать'):
             self.assertIn(phrase, text)
 
     def test_assets_and_scope(self):
         for name in ('corridor_single_side.jpg', 'corridor_two_sides.png'):
             self.assertTrue((self.root/'knowledge/assets'/name).is_file())
-        text = self.knowledge.load_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md').text
+        text = self.knowledge.resolved_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md')
         self.assertNotIn('Орехово', text)
         self.assertNotIn('377BE', text)
         self.assertEqual([], self.knowledge.scope_issues('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md', text))
 
     def test_all_twelve_control_sections(self):
-        text = self.knowledge.load_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md').text
+        text = self.knowledge.resolved_document('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md')
         for index in range(1, 13):
             self.assertIn(f'## КО-{index:02}.', text)
 

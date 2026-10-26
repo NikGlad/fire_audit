@@ -1,5 +1,6 @@
 import shutil
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -55,8 +56,11 @@ class ChatHandoffTests(unittest.TestCase):
         old = self.create_run()
         files = [Path(old['task_file']), Path(old['folder']) / 'ПРАВИЛА_ЗАПУСКА.md']
         original = [f.read_bytes() for f in files]
-        rules = self.root / 'knowledge/18_ОЦЕНКА_ПРЕГРАД.md'
-        rules.write_text(rules.read_text(encoding='utf-8') + '\nНовое подтверждённое правило 999.\n', encoding='utf-8')
+        rules = self.root / 'knowledge/rule_blocks.json'
+        catalogue = json.loads(rules.read_text(encoding='utf-8'))
+        rule = next(row for row in catalogue['rules'] if row['id'] == 'doc_18_001')
+        rule['text'] += '\nНовое подтверждённое правило 999.\n'
+        rules.write_text(json.dumps(catalogue, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         handoff = self.app.runs.chat_handoff('other', old['run']['run_id'])
         self.assertFalse(handoff['rules_current'])
         self.assertTrue(handoff['rules_intact'])
@@ -319,8 +323,17 @@ class ChatHandoffTests(unittest.TestCase):
         self.assertNotIn('2026-04-23', second_task)
 
     def test_editable_instruction_activates_mode_without_code_change(self):
+        rules = self.root / 'knowledge' / 'rule_blocks.json'
+        catalogue = json.loads(rules.read_text(encoding='utf-8'))
+        catalogue['rules'].append({
+            'id': 'fixture_actualization_algorithm',
+            'title': 'Утверждённый алгоритм актуализации',
+            'text': 'Алгоритм утверждён пользователем. Выполнить проверку по переданным шагам.',
+            'modes': ['actualization_protocol'], 'requires': [], 'status': 'active',
+        })
+        rules.write_text(json.dumps(catalogue, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         path = self.root / 'knowledge' / '11_АКТУАЛИЗАЦИЯ.md'
-        path.write_text('# Актуализация\n\nАлгоритм утверждён пользователем. Выполнить проверку по переданным шагам.\n', encoding='utf-8')
+        path.write_text('# Актуализация\n\n{{rule:fixture_actualization_algorithm}}\n', encoding='utf-8')
         run = self.create_run('actualization_protocol')['run']
         self.assertTrue(run['hard_constraints']['workflow_instructions_ready'])
         self.assertTrue(run['hard_constraints']['autocad_actions_enabled'])

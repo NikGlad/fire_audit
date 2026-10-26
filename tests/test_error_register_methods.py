@@ -16,7 +16,7 @@ class ErrorRegisterMethodsTests(unittest.TestCase):
             self.assertIn("РО-04.", snapshot.context)
 
     def test_methods_have_no_project_facts(self):
-        text = self.kb.load_document(self.name).text
+        text = self.kb.resolved_document(self.name)
         self.assertEqual([], self.kb.scope_issues(self.name, text))
         for index in range(1, 10):
             self.assertIn(f"## РО-{index:02}.", text)
@@ -24,7 +24,7 @@ class ErrorRegisterMethodsTests(unittest.TestCase):
         self.assertIn("Отсутствие его в готовом пользовательском образце", text)
 
     def test_f11_block17_request_is_mandatory(self):
-        text = self.kb.load_document(self.name).text
+        text = self.kb.resolved_document(self.name)
         for phrase in (
             "больниц, диспансеров и подобных учреждений класса Ф1.1",
             "всегда включать",

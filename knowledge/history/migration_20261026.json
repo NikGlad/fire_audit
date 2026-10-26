@@ -1,0 +1,760 @@
+{
+  "schema_version": 1,
+  "migration": "ОБ-07",
+  "date": "2026-10-26",
+  "summary": {
+    "source_markdown_files": 33,
+    "canonical_rules": 965,
+    "exact_duplicate_long_lines": 26,
+    "repeated_characters_removed": 69883,
+    "shared_protocol_lines": 146,
+    "checklist_rules": {
+      "КО": 13,
+      "РО": 10
+    },
+    "live_overrides": 37,
+    "archived_overrides": 13,
+    "explicit_editorial_replacements": 9,
+    "roundtrip_exact_documents": 33,
+    "additional_exact_definitions_removed": 7,
+    "nested_exact_line_groups": 17
+  },
+  "source_sha256": {
+    "00_ПРИОРИТЕТЫ_И_БЕЗОПАСНОСТЬ.md": "9a8d45edf7527d8a608928d2d63e98a45a26e91eee55b5989c3e117dbabf9954",
+    "01_ОБЩИЙ_ПРОЦЕСС.md": "37ffdf4302dc3569a3e8273e9774c7788818f42105749919a8233cbd16605489",
+    "02_НОРМАТИВНЫЙ_ПОИСК.md": "b42ae1da31d1afbbc6e78bf8fd7a45f7c6800ab5f5e825c442133af98867b4e9",
+    "03_ОЦЕНКА_СООТВЕТСТВИЯ.md": "621e82bd46e23c1dc0054ad2593597e994037ff7d4e06c52e36027874234bed6",
+    "04_ОБМЕРЫ.md": "92868b5ecfd961c9f5a8709bc48a73479b34eb8b7c05a4adc2f2cc0799578e0c",
+    "05_ОФОРМЛЕНИЕ_AUTOCAD.md": "943e12150a016d44c1ea9a525883766f4f38ffa98bf42bdef25ab5247275d31b",
+    "06_ЭТАПИЗАЦИЯ.md": "924da330cf56ce98500baec2b2e764b0af0c0bf235e5e48da22022b9877ab6a0",
+    "07_СТАТЬЯ_89.md": "f044477e37e0b47de7cff5040f05f6d4246c13b4f2005af2d86c7af6e9acacf8",
+    "08_САМОПРОВЕРКА.md": "057b08e0ad661b80c7264dbc34b0f2e054b8c2a751c138c908a236666fb86810",
+    "09_ИСТОЧНИКИ_И_ГРАНИЦЫ.md": "8b30c6dea1e4d5af2c0ea107f3af0ef38ceb06989b795ae37dfef8bc5a23d599",
+    "10_ЭТАПИЗАЦИЯ_ДЕТАЛЬНЫЕ_УСЛОВИЯ.md": "a74cbae18df1afe1b823ff900bdabaa043a28037da43de55681e6bed8d12c566",
+    "11_АКТУАЛИЗАЦИЯ.md": "94480aa09b0945c752429fe8b13c83ad79d17cc61a664ac11fc607119d59d83b",
+    "12_ПЕРЕНОС_ОЦЕНКИ_АР.md": "bcccce929719acb0044fc150b3f61295670a0733093e7088a225c52de4406a2a",
+    "13_ПОДГОТОВКА_ПЛАНОВ_АР.md": "0fb1bd13023fd3a6a677cac6ff0e8afaad05d1a6ffe4c8f11b99c4210f94f6be",
+    "14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md": "d10d89ff88287639da37c9f6e27423d18e7d38f15567c917b3c63db810013073",
+    "15_СРАВНЕНИЕ_ПЛАНОВ_АР.md": "1f34525a1b3ed91bee82153cdc61c182bd178a34a4a05010d79291dd2a9c3adc",
+    "16_ПРОТОКОЛ.md": "077b15b06aad9cbdb0714a0e2b9154e791f8f489d02a40f1131e4713670b1493",
+    "18_ОЦЕНКА_ПРЕГРАД.md": "f2acfbf12f83a26ff8b9d7a929ff00080eca1dd40d4e8f638fb5b339061b7cf4",
+    "19_ОЦЕНКА_ДУ.md": "72b7dadacd7cd06e5290b779aaff16e8c79358f4bd2620cb45b2f667706fda63",
+    "20_КЛАССИФИКАЦИЯ_ЧАСТЕЙ_ЗДАНИЯ.md": "c834fba08665a875d5a2316f1b31dc260ab6fcecbd510a50ae649c913e5b0f2a",
+    "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md": "a55b5e1a8bae11ac9f210445ee809997e8122b11a9b3e1ea1926d7045fccb01e",
+    "22_ПРЯМАЯ_РАБОТА_ПОМОЩНИКА.md": "b058476eebf530a0afcbf45c82e32e9a84b950a4115aafd07ed726eb2e71dbd3",
+    "23_НОРМАТИВНАЯ_МАТРИЦА_ПП.md": "b25928df805e85487e83790d9d848929b03285d8b718fc398a368a5d311dd82b",
+    "24_ДВА_ВИДА_ЗАДАНИЯ.md": "f6bce521674fcec02a11a2b8eb29f5b69fe219bce78e6d293cb743d88da409a1",
+    "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md": "2bed4dc0f449db6c8abd8ea9f2c4d9a0faeb1345df6d32f67c55f743be3227d3",
+    "26_СОСТАВ_СХЕМЫ_ПП.md": "f573a4ff75bfaa9b204e2dd01da696b2a2494467db415066bfcc7eeece592425",
+    "27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md": "3a326975c76e448c72cb6c106a91d32f77314b815f6136a295f4bd050698ff0d",
+    "28_НОРМЫ_ДЛЯ_ОБЪЕКТА.md": "f5c84f3a8c2cb0408ab71fda1b29e8e32094515a659519d273995d5124e84026",
+    "29_КОНТРОЛЬ_ЗАМЕЧАНИЙ_ПП.md": "2861dcc43911b0f83da5bc7428d20197776ac9a2a76aaa8fc2fc0529690d66c1",
+    "29_ПРЕЕМСТВЕННОСТЬ_ПРОВЕРОК.md": "a5a7a049e1e83c9de81964d8a5df740ca77d2c51851c956cba2fcd2c165ed911",
+    "30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md": "1bbddef0049d7b0a5df01eacfea24bed1eb18329957e233f00912f182423254b",
+    "31_РЕЕСТР_ОШИБОК_И_МЕТОДИКА.md": "ea8d90a661140585ebec1889c3028786b9af9fa975747248068d955203246266",
+    "32_ПОСЛЕДОВАТЕЛЬНОСТЬ_ОЦЕНКИ_ПРЕГРАД.md": "fb685cdfc24c796f8ef2b64ffd43f65c2fecdf1d38e378dff68c00305381021d",
+    "rule_overrides.json": "b4275b9ff4c12cbe648600404541b5ae9669783daed73163c0edfde11761a913"
+  },
+  "replacements": [
+    {
+      "document": "01_ОБЩИЙ_ПРОЦЕСС.md",
+      "original_line": 25,
+      "old_text": "Каждый завершённый запуск с видом задания «Полная проверка с AutoCAD» имеет собственный результат DWG. До первой изменяющей операции помощник создаёт отдельную копию в папке исходного DWG, делает её активной и выполняет всю работу напрямую в ней через AUTOM8LABS. Исходный DWG на диске остаётся без изменений. Имя файла формируется по `run_id` и виду работы согласно общему правилу безопасности. Для вида задания «Анализ и задание в Word» результатом является проверенный DOCX по документу 24: DWG разрешено только читать, графические действия описывать, но не выполнять.",
+      "new_text": "Для одного поручения и всех его продолжений использовать единственную закреплённую рабочую копию результата DWG по разделу «Обязательное сохранение отдельного результата DWG» документа 00. Новый запуск не создаёт новый результат DWG. Для вида задания «Анализ и задание в Word» результатом является проверенный DOCX по документу 24: DWG разрешено только читать, графические действия описывать, но не выполнять.",
+      "reason": "Отменённое требование отдельного DWG для каждого запуска",
+      "authority": [
+        "00:77–92; прямое уточнение 24.09.2026"
+      ]
+    },
+    {
+      "document": "00_ПРИОРИТЕТЫ_И_БЕЗОПАСНОСТЬ.md",
+      "original_line": 111,
+      "old_text": "- `Актуализация` является отдельным четвёртым режимом. До получения его инструкции никакие объекты чертежа нельзя самовольно относить к этому режиму или обрабатывать по аналогии с другими режимами.",
+      "new_text": "- `Актуализация + протокол` выполняется по утверждённой инструкции документа 11 в режиме `actualization_protocol`; не относить к нему объекты самовольно по аналогии с другими видами работ.",
+      "reason": "Инструкция актуализации уже утверждена; удалено устаревшее ожидание",
+      "authority": [
+        "11:3,7–11"
+      ]
+    },
+    {
+      "document": "08_САМОПРОВЕРКА.md",
+      "original_line": 30,
+      "old_text": "режим `Актуализация` до получения отдельной инструкции не применяется к объектам по аналогии;",
+      "new_text": "режим `Актуализация + протокол` применяется по утверждённой инструкции документа 11, а не по аналогии;",
+      "reason": "Инструкция актуализации уже утверждена",
+      "authority": [
+        "11:3,7–11"
+      ]
+    },
+    {
+      "document": "11_АКТУАЛИЗАЦИЯ.md",
+      "original_line": 39,
+      "old_text": "Перед завершением убедиться, что каждый поступивший ответ имеет такое сопоставление и пояснение со всеми тремя составляющими.",
+      "new_text": "Перед завершением убедиться, что каждый поступивший ответ имеет такое сопоставление и внутреннее решение со всеми тремя составляющими. Для принятого ответа применять специальное правило раздела «Принятый ответ: перенос без подтверждающего комментария»: решение сохранять в реестре, не переносить на чертёж; для остальных предусмотренных случаев пояснение остаётся обязательным.",
+      "reason": "Явное исключение accepted_response имеет приоритет над общей обязательностью комментария",
+      "authority": [
+        "11:43–49",
+        "16:33–39"
+      ]
+    },
+    {
+      "document": "16_ПРОТОКОЛ.md",
+      "original_line": 29,
+      "old_text": "Перед завершением убедиться, что каждый поступивший ответ имеет такое сопоставление и пояснение со всеми тремя составляющими.",
+      "new_text": "Перед завершением убедиться, что каждый поступивший ответ имеет такое сопоставление и внутреннее решение со всеми тремя составляющими. Для принятого ответа применять специальное правило раздела «Принятый ответ: перенос без подтверждающего комментария»: решение сохранять в реестре, не переносить на чертёж; для остальных предусмотренных случаев пояснение остаётся обязательным.",
+      "reason": "Явное исключение accepted_response имеет приоритет над общей обязательностью комментария",
+      "authority": [
+        "11:43–49",
+        "16:33–39"
+      ]
+    },
+    {
+      "document": "11_АКТУАЛИЗАЦИЯ.md",
+      "original_line": 319,
+      "old_text": "Пояснение пожарного консультанта по каждому поступившему ответу заказчика обязательно и составляется по разделу «Сопоставление каждого ответа и пояснение консультанта» выше. Ограничение на комментарии к каждому проверенному замечанию не отменяет эту обязанность: пояснение адресуется конкретному ответу и содержит решение о принятии, оставшиеся действия и основание. Правила размещения пояснений в DWG и разрешённый вариант задания сохраняются. Ответы по рамке «Требования пожарной безопасности» также разобрать с указанием действующего ограничения её перепроверки; сопоставление адресата не считать доказательством проверенного соответствия исключённого требования.",
+      "new_text": "Каждый поступивший ответ заказчика обязательно сопоставить с исходным замечанием и проанализировать по разделу «Сопоставление каждого ответа и пояснение консультанта». Необходимость комментария определять по специальному разделу «Принятый ответ: перенос без подтверждающего комментария»: полностью принятый ответ не сопровождается новым подтверждающим комментарием, внутреннее решение сохраняется в реестре; в остальных предусмотренных случаях комментарий обязателен. Правила размещения пояснений в DWG и разрешённый вариант задания сохраняются. Ответы по рамке «Требования пожарной безопасности» также разобрать с указанием действующего ограничения её перепроверки; сопоставление адресата не считать доказательством проверенного соответствия исключённого требования.",
+      "reason": "Снята отменённая безусловная обязанность комментария для принятого ответа; прочие условия сохранены",
+      "authority": [
+        "11:43–49",
+        "16:33–39"
+      ]
+    },
+    {
+      "document": "23_НОРМАТИВНАЯ_МАТРИЦА_ПП.md",
+      "original_line": 111,
+      "old_text": "По указанию пользователя от 14.10.2026 размеры всех проверенных простенков создавать и оставлять в итоговом DWG в слое `экспертиза противопожарные преграды пояснения`, включая соответствующие требованиям.",
+      "new_text": "Размеры всех проверенных простенков создавать и оставлять в итоговом DWG, включая соответствующие требованиям. Слой каждого рабочего размера определять по действующему общему правилу: при наличии проверенного луча — `экспертиза противопожарные преграды`, без луча — `экспертиза противопожарные преграды пояснения`; связь луча с размером проверять по документу 21.",
+      "reason": "Последнее утверждённое правило распределяет размеры по проверенным лучам",
+      "authority": [
+        "21:148",
+        "barrier_dimension_layer_depends_on_verified_ray_20261023"
+      ]
+    },
+    {
+      "document": "08_САМОПРОВЕРКА.md",
+      "original_line": 3,
+      "old_text": "Пройти РО-01–РО-08 документа `31_РЕЕСТР_ОШИБОК_И_МЕТОДИКА.md` и последний датированный объектный реестр ошибок. Для каждого применимого урока сохранить отдельное доказательство проверки. Проверить связанные требования к вновь требуемым секциям и границам отсеков, причины отличий от образца и компоновку полных групп. Обновление инструкции не закрывает исправление DWG; режим только чтения исключает даже временную перекраску и диагностическое копирование.",
+      "new_text": "Пройти все применимые пункты документа `31_РЕЕСТР_ОШИБОК_И_МЕТОДИКА.md` по автоматически сформированному перечню:\n\n{{checklist:РО}}\n\nПроверить последний датированный объектный реестр ошибок. Для каждого применимого урока сохранить отдельное доказательство проверки. Проверить связанные требования к вновь требуемым секциям и границам отсеков, причины отличий от образца и компоновку полных групп. Обновление инструкции не закрывает исправление DWG; режим только чтения исключает даже временную перекраску и диагностическое копирование.",
+      "reason": "Статический диапазон не включал РО-09 и РО-10; перечень строится из действующих ID без расширения применимости",
+      "authority": [
+        "31:3–18,88–94"
+      ]
+    },
+    {
+      "document": "08_САМОПРОВЕРКА.md",
+      "original_line": 11,
+      "old_text": "Дополнительно пройти КО-01–КО-12 документа 30. Для каждого относящегося пункта сохранять доказательства, а не только флаг выполнения. Специальные исключения КО-03 (цвет целого нового MText), КО-06 (слой размеров маршей), КО-08 (один общий текст без дублей) учитывать при проверке общих условий ниже. Отсутствие наложений проверять после каждой операции и контрольным проходом перед нумерацией; запросы входят в общую нумерацию.",
+      "new_text": "Дополнительно пройти все применимые пункты документа 30 по автоматически сформированному перечню:\n\n{{checklist:КО}}\n\nДля каждого относящегося пункта сохранять доказательства, а не только флаг выполнения. Специальные исключения КО-03 (цвет целого нового MText), КО-06 (слой размеров маршей), КО-08 (один общий текст без дублей) учитывать при проверке общих условий ниже. Отсутствие наложений проверять после каждой операции и контрольным проходом перед нумерацией; запросы входят в общую нумерацию.",
+      "reason": "Статический диапазон не включал КО-13; перечень строится из действующих ID без расширения применимости",
+      "authority": [
+        "30:117–119"
+      ]
+    }
+  ],
+  "duplicates": [
+    {
+      "id": "shared_001",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 2
+    },
+    {
+      "id": "shared_002",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_003",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_004",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_005",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_006",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_007",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_008",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md"
+      ],
+      "count": 2
+    },
+    {
+      "id": "shared_009",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_010",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_011",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md",
+        "27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md"
+      ],
+      "count": 4
+    },
+    {
+      "id": "shared_012",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md",
+        "27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md"
+      ],
+      "count": 4
+    },
+    {
+      "id": "shared_013",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md",
+        "27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md"
+      ],
+      "count": 4
+    },
+    {
+      "id": "shared_014",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_015",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_016",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_017",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_018",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_019",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_020",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_021",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_022",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_023",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_024",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_025",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    },
+    {
+      "id": "shared_026",
+      "source_occurrences": [
+        "18_ОЦЕНКА_ПРЕГРАД.md",
+        "21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md",
+        "26_СОСТАВ_СХЕМЫ_ПП.md"
+      ],
+      "count": 3
+    }
+  ],
+  "roundtrip": "Exact normalized-newline equality with source after only replacements listed above; checklist directives are expanded at runtime.",
+  "override_effective_modes_before": {
+    "barrier_full_internal_perimeter_all_adjacent_spaces_20260918": [],
+    "barrier_single_strictest_line_shared_boundary_20260918": [],
+    "barrier_single_strictest_line_when_required_20260918": [
+      "barrier_assessment"
+    ],
+    "escape_route_rule_by_gpzu_date_20260918": [
+      "barrier_assessment"
+    ],
+    "mandatory_fire_door_callouts_20260918": [],
+    "slab_callout_above_table21_baseline_20260918": [
+      "barrier_assessment"
+    ],
+    "barrier_perimeter_with_drawing_scope_exceptions": [],
+    "independent_door_callouts_and_legend_not_duplicates": [],
+    "barrier_large_storage_and_vent_chamber_boundaries_20260918": [
+      "barrier_assessment"
+    ],
+    "callout_rays_single_start_point_20260918": [
+      "barrier_assessment"
+    ],
+    "vent_chamber_outside_served_compartment_ei150_20260927": [
+      "barrier_assessment"
+    ],
+    "every_required_fire_door_has_callout_20260920": [],
+    "specific_door_callouts_general_fillings_in_legend_20260920": [
+      "barrier_assessment"
+    ],
+    "escape_routes_full_space_types_and_toilet_boundaries_20260920": [
+      "barrier_assessment"
+    ],
+    "barrier_completion_gates_20260920": [
+      "barrier_assessment"
+    ],
+    "legend_contains_only_drawn_barrier_types_20260920": [
+      "barrier_assessment"
+    ],
+    "unconfirmed_opening_infills_not_fire_rated_20260925": [
+      "stage",
+      "compliance",
+      "article89",
+      "actualization_protocol",
+      "ar_assessment_transfer",
+      "ar_plan_preparation",
+      "ar_plan_comparison",
+      "protocol",
+      "barrier_assessment",
+      "du_assessment"
+    ],
+    "sp2_5_3_6_second_pass_dimensions_20260925": [
+      "barrier_assessment"
+    ],
+    "barrier_sequence_item_applicability_before_word_20261020": [
+      "barrier_assessment"
+    ],
+    "barrier_sequence_general_algorithm_and_category_reconciliation_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_sequence_all_floors_with_word_approval_20261017": [
+      "barrier_assessment"
+    ],
+    "continue_all_independent_boundaries_with_addressed_queries_20261012": [],
+    "ordinary_tambour_public_room_barrier_assessment_20261012": [
+      "barrier_assessment"
+    ],
+    "stairwall_table21_exception_20261013": [],
+    "continuous_barrier_across_openings_20261013": [],
+    "existing_corridor_crosswalls_first_20261013": [],
+    "same_category_actual_function_20261013": [
+      "barrier_assessment"
+    ],
+    "corridor_all_rated_boundaries_and_existing_doors_20261013": [
+      "barrier_assessment"
+    ],
+    "corridor_type2_only_crosswalls_with_corridor_doors_20261013": [
+      "barrier_assessment"
+    ],
+    "stairwalls_table21_draw_all_projects_20261015": [
+      "barrier_assessment"
+    ],
+    "barrier_one_customer_legend_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_concise_callouts_and_strictest_targets_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_required_rating_and_compartment_trace_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_integrated_safety_zone_shafts_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_sp2_5_3_6_callout_template_20261019": [
+      "barrier_assessment"
+    ],
+    "barrier_unique_characteristic_colors_20261021": [],
+    "barrier_unified_EI45_color_group_20261021": [
+      "barrier_assessment"
+    ],
+    "barrier_communication_shafts_EI45_20261021": [
+      "barrier_assessment"
+    ],
+    "barrier_firelift_hall_addressed_doors_20261021": [
+      "barrier_assessment"
+    ],
+    "barrier_ordinary_stair_doors_each_floor_20261021": [
+      "barrier_assessment"
+    ],
+    "barrier_current_user_geometry_preservation_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_facade_rays_dimensions_layer_20261023": [],
+    "barrier_stair_volume_shafts_20261023": [],
+    "barrier_recessed_cabinet_wall_route_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_basement_stair_volume_divider_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_no_hooks_overlaps_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_facade_callout_no_unrelated_route_clause_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_stair_internal_shafts_and_full_enclosure_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_numeric_only_mm_dimensions_20261023": [
+      "barrier_assessment"
+    ],
+    "barrier_dimension_layer_depends_on_verified_ray_20261023": [
+      "barrier_assessment"
+    ]
+  },
+  "exact_definition_aliases": {
+    "doc_13_004": "doc_12_002",
+    "doc_13_006": "doc_12_004",
+    "doc_19_003": "doc_15_003",
+    "doc_25_116": "doc_18_077",
+    "doc_25_117": "doc_18_078",
+    "doc_26_026": "doc_18_077",
+    "doc_26_027": "doc_18_078"
+  },
+  "nested_exact_line_references": [
+    {
+      "canonical_id": "shared_002",
+      "characters": 569,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 1,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_003",
+      "characters": 512,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 3,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_004",
+      "characters": 590,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 5,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_005",
+      "characters": 453,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 7,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_006",
+      "characters": 495,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 9,
+          "prefix": "",
+          "suffix": ""
+        },
+        {
+          "id": "corridor_type2_only_crosswalls_with_corridor_doors_20261013",
+          "line": 1,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_007",
+      "characters": 520,
+      "replaced_occurrences": [
+        {
+          "id": "corridor_all_rated_boundaries_and_existing_doors_20261013",
+          "line": 11,
+          "prefix": "",
+          "suffix": ""
+        },
+        {
+          "id": "corridor_type2_only_crosswalls_with_corridor_doors_20261013",
+          "line": 3,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_009",
+      "characters": 856,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_communication_shafts_EI45_20261021",
+          "line": 1,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_010",
+      "characters": 727,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_communication_shafts_EI45_20261021",
+          "line": 3,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_011",
+      "characters": 506,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_firelift_hall_addressed_doors_20261021",
+          "line": 1,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_012",
+      "characters": 852,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_firelift_hall_addressed_doors_20261021",
+          "line": 3,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_013",
+      "characters": 785,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_firelift_hall_addressed_doors_20261021",
+          "line": 5,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_014",
+      "characters": 754,
+      "replaced_occurrences": [
+        {
+          "id": "barrier_communication_shafts_EI45_20261021",
+          "line": 5,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "shared_line_001",
+      "characters": 157,
+      "replaced_occurrences": [
+        {
+          "id": "doc_05_061",
+          "line": 15,
+          "prefix": "- ",
+          "suffix": ""
+        },
+        {
+          "id": "doc_06_002",
+          "line": 20,
+          "prefix": "- ",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "doc_26_023",
+      "characters": 648,
+      "replaced_occurrences": [
+        {
+          "id": "doc_18_017",
+          "line": 4,
+          "prefix": "- ",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "doc_18_046",
+      "characters": 680,
+      "replaced_occurrences": [
+        {
+          "id": "doc_26_002",
+          "line": 2,
+          "prefix": "- ",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "doc_26_028",
+      "characters": 1000,
+      "replaced_occurrences": [
+        {
+          "id": "stairwalls_table21_draw_all_projects_20261015",
+          "line": 1,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    },
+    {
+      "canonical_id": "doc_26_029",
+      "characters": 917,
+      "replaced_occurrences": [
+        {
+          "id": "stairwalls_table21_draw_all_projects_20261015",
+          "line": 3,
+          "prefix": "",
+          "suffix": ""
+        }
+      ]
+    }
+  ]
+}

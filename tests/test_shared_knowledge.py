@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from fire_audit.knowledge import KnowledgeBase, MODE_FILES
 from fire_audit.paths import AppPaths
+from fire_audit.rule_registry import RuleResolver
 
 
 class SharedKnowledgeTests(unittest.TestCase):
@@ -23,12 +24,12 @@ class SharedKnowledgeTests(unittest.TestCase):
 
     def test_occupancy_rule_is_shared_and_not_bound_to_room_numbers(self):
         filename = '25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md'
-        text = (self.root / 'knowledge' / filename).read_text(encoding='utf-8-sig')
+        text = self.knowledge.resolved_document(filename)
         self.assertIn('Расчёт вместимости переговорных и кабинетов обучения', text)
         self.assertIn('по числу стульев', text)
         self.assertIn('1 человека на 6 м²', text)
         self.assertIn('округлением вверх', text)
-        self.knowledge.validate_document(filename, text)
+        self.knowledge.validate_shared_scope(filename, text)
         for mode in ('compliance', 'actualization_protocol', 'stage', 'barrier_assessment'):
             with self.subTest(mode=mode):
                 self.assertIn('Расчёт вместимости переговорных и кабинетов обучения',
@@ -153,11 +154,27 @@ class SharedKnowledgeTests(unittest.TestCase):
                 self.assertIn('не повторять уже закрытый вопрос', context)
 
     def validate_catalogue(self, rules):
-        self.knowledge.validate_document('rule_overrides.json', json.dumps({'rules': rules}))
+        self.knowledge.validate_document('rule_overrides.json', json.dumps({'rules': self.catalogue_fixture(rules)}))
+
+    def catalogue_fixture(self, rules):
+        """Keep replacement tests on the current single-source storage format."""
+        rules = json.loads(json.dumps(rules))
+        path = self.root / 'knowledge/rule_blocks.json'
+        registry = json.loads(path.read_text(encoding='utf-8'))
+        registry['rules'] = [row for row in registry['rules'] if not row['id'].startswith('test_override_')]
+        for index, row in enumerate(rules):
+            text = row.get('text')
+            if isinstance(text, str) and text.strip():
+                key = f'test_override_{index}'
+                registry['rules'].append({'id': key, 'text': text, 'modes': list(MODE_FILES)})
+                row['text_ref'] = key
+                del row['text']
+        path.write_text(json.dumps(registry, ensure_ascii=False), encoding='utf-8')
+        return rules
 
     def save_catalogue_fixture(self, rules):
         (self.root / 'knowledge/rule_overrides.json').write_text(
-            json.dumps({'rules': rules}, ensure_ascii=False), encoding='utf-8')
+            json.dumps({'rules': self.catalogue_fixture(rules)}, ensure_ascii=False), encoding='utf-8')
 
     def test_number_variants_and_category_assignments_are_project_facts(self):
         examples = ('Помещение 129.', 'Помещение 1.233 отделить.', 'Помещение №7 принять В3.',
@@ -194,7 +211,7 @@ class SharedKnowledgeTests(unittest.TestCase):
                      'Порядок проверки замечания\n\n1. Прочитать норму.',
                      'Порядок проверки помещения\n\n1. Проверить границы.'):
             with self.subTest(text=text):
-                self.knowledge.validate_document('example.md', text)
+                self.knowledge.validate_shared_scope('example.md', text)
 
     def test_object_file_paths_are_rejected_but_general_sources_are_allowed(self):
         forbidden = (r'C:\Objects\Factory\plan.dwg', r'C:\Objects\Factory\data.xlsx',
@@ -332,9 +349,12 @@ class SharedKnowledgeTests(unittest.TestCase):
 
     def test_snapshot_is_immutable_and_self_consistent_after_source_change(self):
         snapshot = self.knowledge.snapshot_for_mode('compliance')
-        doc = snapshot.documents[0]
+        doc = next(item for item in snapshot.documents if item.name == 'rule_blocks.json')
         original_digest = snapshot.digest
-        doc.path.write_text(doc.text + '\nSHARED_REVISION_MARKER\n', encoding='utf-8')
+        registry = json.loads(doc.text)
+        included_id = next(key for kind, key in RuleResolver.references(snapshot.documents[0].text) if kind == 'rule')
+        next(row for row in registry['rules'] if row['id'] == included_id)['text'] += '\nSHARED_REVISION_MARKER\n'
+        doc.path.write_text(json.dumps(registry, ensure_ascii=False), encoding='utf-8')
         self.assertNotIn('SHARED_REVISION_MARKER', snapshot.context)
         self.assertEqual(snapshot.digest, hashlib.sha256(snapshot.context.encode('utf-8')).hexdigest())
         self.assertNotEqual(original_digest, self.knowledge.snapshot_for_mode('compliance').digest)

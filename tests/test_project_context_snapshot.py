@@ -37,6 +37,14 @@ class ProjectContextSnapshotTests(unittest.TestCase):
             'slug': slug, 'mode': 'compliance',
         })
 
+    def append_rule_text(self, changes):
+        path = self.root / 'knowledge' / 'rule_blocks.json'
+        catalogue = json.loads(path.read_text(encoding='utf-8'))
+        rules = {row['id']: row for row in catalogue['rules']}
+        for rule_id, text in changes.items():
+            rules[rule_id]['text'] += '\n' + text + '\n'
+        path.write_text(json.dumps(catalogue, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
     def assert_consistent(self, context):
         self.assertEqual(
             context['knowledge_digest'],
@@ -70,12 +78,7 @@ class ProjectContextSnapshotTests(unittest.TestCase):
 
         def capture_then_edit(mode):
             snapshot = snapshot_for_mode(mode)
-            for filename, text in (
-                ('03_ОЦЕНКА_СООТВЕТСТВИЯ.md', marker),
-                ('22_ПРЯМАЯ_РАБОТА_ПОМОЩНИКА.md', quality_marker),
-            ):
-                path = self.root / 'knowledge' / filename
-                path.write_text(path.read_text(encoding='utf-8') + '\n' + text + '\n', encoding='utf-8')
+            self.append_rule_text({'doc_03_001': marker, 'doc_22_001': quality_marker})
             return snapshot
 
         with patch.object(self.knowledge, 'snapshot_for_mode', side_effect=capture_then_edit) as capture:
@@ -111,9 +114,8 @@ class ProjectContextSnapshotTests(unittest.TestCase):
 
     def test_new_shared_rule_is_available_to_both_existing_projects(self):
         before = {slug: self.context(slug) for slug in ('first', 'second')}
-        path = self.root / 'knowledge/03_ОЦЕНКА_СООТВЕТСТВИЯ.md'
         marker = 'Для каждого замечания сопоставить область применения с назначением текущего помещения.'
-        path.write_text(path.read_text(encoding='utf-8') + '\n' + marker + '\n', encoding='utf-8')
+        self.append_rule_text({'doc_03_001': marker})
         after = {slug: self.context(slug) for slug in ('first', 'second')}
         for slug in ('first', 'second'):
             self.assertIn(marker, after[slug]['rules'])

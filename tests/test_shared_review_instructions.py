@@ -36,9 +36,9 @@ class SharedReviewInstructionsTests(unittest.TestCase):
         self.assertIn('autocad.reused_objects', context)
 
     def test_frame_exclusion_is_not_global(self):
-        doc = self.k.load_document('25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md')
-        self.assertNotIn('Исключённую пользователем рамку требований пожарной безопасности не перепроверять и не изменять;', doc.text)
-        self.assertIn('относится к режиму актуализации по документу 11', doc.text)
+        doc = self.k.resolved_document('25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md')
+        self.assertNotIn('Исключённую пользователем рамку требований пожарной безопасности не перепроверять и не изменять;', doc)
+        self.assertIn('относится к режиму актуализации по документу 11', doc)
 
     def test_people_layer_and_full_norm_rules_reach_every_mode(self):
         for mode in MODE_FILES:
@@ -50,7 +50,7 @@ class SharedReviewInstructionsTests(unittest.TestCase):
             self.assertIn('graphics.applied = false', context, mode)
 
     def test_layer_rule_no_longer_forbids_people_count_layer(self):
-        doc = self.k.load_document('05_ОФОРМЛЕНИЕ_AUTOCAD.md').text
+        doc = self.k.resolved_document('05_ОФОРМЛЕНИЕ_AUTOCAD.md')
         self.assertNotIn('только два точных имени слоёв', doc)
         self.assertNotIn('в том числе `экспертиза обмеры`,', doc)
         self.assertIn('Самостоятельные подписи количества людей', doc)
@@ -67,7 +67,7 @@ class SharedReviewInstructionsTests(unittest.TestCase):
             self.assertIn('без переноса её в другой слой', context, mode)
 
     def test_reused_measurements_are_not_forced_into_new_graphics_layer(self):
-        doc = self.k.load_document('05_ОФОРМЛЕНИЕ_AUTOCAD.md').text
+        doc = self.k.resolved_document('05_ОФОРМЛЕНИЕ_AUTOCAD.md')
         self.assertIn('разрешено повторно использовать без переноса слоя', doc)
         self.assertNotIn('Итоговые линии и полилинии длины пути эвакуации должны находиться', doc)
         self.assertIn('Не ставить этот флаг вопреки фактическим слоям', doc)

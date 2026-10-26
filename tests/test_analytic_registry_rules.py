@@ -39,23 +39,23 @@ class AnalyticRegistryRulesTests(unittest.TestCase):
                     self.assertNotIn(phrase, context)
 
     def test_missing_data_reason_stays_in_registry(self):
-        text = self.knowledge.load_document('01_ОБЩИЙ_ПРОЦЕСС.md').text
+        text = self.knowledge.resolved_document('01_ОБЩИЙ_ПРОЦЕСС.md')
         self.assertIn('записать в рабочем реестре конкретный пункт, причину, выполненную часть и следующий шаг', text)
         self.assertIn('Аналитическое пояснение на план не добавлять', text)
         self.assertIn('при наличии оснований оформить сам запрос', text)
 
     def test_existing_notes_and_required_outputs_are_preserved(self):
-        text = self.knowledge.load_document('25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md').text
+        text = self.knowledge.resolved_document('25_ОБЩИЕ_ПРАВИЛА_И_ДАННЫЕ_ОБЪЕКТА.md')
         self.assertIn('Ранее существующие комментарии, замечания и ответы не удалять и не скрывать', text)
         self.assertIn('Сами замечания и необходимые недублирующие запросы сохраняются по правилам режима', text)
         self.assertIn('дополнения о новых местах нарушения и обработка ответов заказчика', text)
         self.assertIn('В пояснении для объекта сохранять утверждённый состав характеристик', text)
-        checklist = self.knowledge.load_document('08_САМОПРОВЕРКА.md').text
+        checklist = self.knowledge.resolved_document('08_САМОПРОВЕРКА.md')
         self.assertIn('ранее существовавшие аналитические пояснения о невыдаче без добавления к ним новых лучей', checklist)
         self.assertNotIn('ранее существовавшие пояснения без добавления к ним новых лучей', checklist)
         for name in ('05_ОФОРМЛЕНИЕ_AUTOCAD.md', '06_ЭТАПИЗАЦИЯ.md'):
             with self.subTest(document=name):
-                text = self.knowledge.load_document(name).text
+                text = self.knowledge.resolved_document(name)
                 self.assertIn('От ранее существующего зелёного пояснения о невыдаче элемента новый луч не строить', text)
                 self.assertIn('новые аналитические пояснения не создавать', text)
 

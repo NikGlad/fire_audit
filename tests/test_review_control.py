@@ -1,5 +1,6 @@
 """Synthetic fixtures only; no live AutoCAD operations and no normative certification."""
 import copy
+import hashlib
 import json
 import shutil
 import tempfile
@@ -12,6 +13,7 @@ from fire_audit.control_geometry import bounds, compare_measurement, geometry_an
 from fire_audit.cad_guard import verify_created_geometry
 from fire_audit.io_utils import read_json, write_json
 from fire_audit.quality import compare_case
+from fire_audit.rule_registry import RuleResolver
 from mcp_server import MCPServer, TOOLS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -111,6 +113,14 @@ class ReviewTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def update_canonical_document(self, document, marker):
+        path = self.root / "knowledge/rule_blocks.json"
+        catalogue = read_json(path)
+        template = (self.root / "knowledge" / document).read_text(encoding="utf-8")
+        rule_id = next(key for kind, key in RuleResolver.references(template) if kind == "rule")
+        next(row for row in catalogue["rules"] if row["id"] == rule_id)["text"] += "\n" + marker
+        write_json(path, catalogue)
+
     def setup_inventory(self, two=False):
         self.snap = self.c.capture("test", self.run, ["A", "B", "C"])["id"]
         entries = [{"id": "r1", "title": "Synthetic width", "source_ids": ["A"], "floor": "1", "snapshot_id": self.snap, "block_order": 1}]
@@ -174,13 +184,32 @@ class ReviewTests(unittest.TestCase):
 
     def test_rules_are_frozen_and_changed_rules_block(self):
         frozen = (self.c.folder("test", self.run)/"ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8")
-        with (self.root/"knowledge/05_ОФОРМЛЕНИЕ_AUTOCAD.md").open("a", encoding="utf-8") as f: f.write("\nchange\n")
+        self.update_canonical_document("05_ОФОРМЛЕНИЕ_AUTOCAD.md", "change")
         self.assertTrue(self.c.freshness_errors("test", self.run))
         self.assertEqual(frozen, (self.c.folder("test", self.run)/"ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8"))
 
+    def test_knowledge_source_reads_and_hashes_effective_canonical_text(self):
+        document = "05_ОФОРМЛЕНИЕ_AUTOCAD.md"
+        source = self.c.read_document("knowledge/" + document, 1)
+        resolved = self.app.knowledge.resolved_document(document)
+        self.assertNotIn("{{rule:", source["text"])
+        self.assertEqual(source["source_sha256"], hashlib.sha256(resolved.encode("utf-8")).hexdigest())
+        self.assertEqual(source["hash_kind"], "effective_instruction_utf8")
+        self.update_canonical_document(document, "CANONICAL_SOURCE_REVISION")
+        updated = self.c.read_document("knowledge/" + document, 1)
+        self.assertIn("CANONICAL_SOURCE_REVISION", updated["text"])
+        self.assertNotEqual(source["source_sha256"], updated["source_sha256"])
+
     def test_rule_replacement_keeps_history_and_excludes_old_rule(self):
-        rules = [{"id":"old","status":"active","modes":["compliance"],"replaces":[],"text":"OLD_ONLY_RULE"},
-                 {"id":"new","status":"active","modes":["compliance"],"replaces":["old"],"text":"NEW_ONLY_RULE"}]
+        path = self.root / "knowledge/rule_blocks.json"
+        catalogue = read_json(path)
+        catalogue["rules"].extend([
+            {"id": "review_old", "text": "OLD_ONLY_RULE", "modes": ["compliance"], "status": "active"},
+            {"id": "review_new", "text": "NEW_ONLY_RULE", "modes": ["compliance"], "status": "active"},
+        ])
+        write_json(path, catalogue)
+        rules = [{"id":"old","status":"active","modes":["compliance"],"replaces":[],"text_ref":"review_old"},
+                 {"id":"new","status":"active","modes":["compliance"],"replaces":["old"],"text_ref":"review_new"}]
         write_json(self.root/"knowledge/rule_overrides.json", {"rules":rules})
         context = self.app.knowledge.context_for_mode("compliance")
         self.assertNotIn("OLD_ONLY_RULE", context)

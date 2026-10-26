@@ -551,7 +551,92 @@ class FireAuditGUI(tk.Tk):
     def _build_knowledge_tab(self) -> None:
         tab = ttk.Frame(self.tabs, padding=10)
         self.tabs.add(tab, text="Постоянные инструкции")
-        pane = ttk.Panedwindow(tab, orient="horizontal")
+        filters = ttk.Frame(tab)
+        filters.pack(fill="x", pady=(0, 6))
+        ttk.Label(filters, text="Вид работы").pack(side="left")
+        self.knowledge_mode_var = tk.StringVar(value="Все виды работ")
+        self.knowledge_history_var = tk.BooleanVar(value=False)
+        mode = ttk.Combobox(filters, textvariable=self.knowledge_mode_var, state="readonly",
+                            values=["Все виды работ", *self.mode_values], width=30)
+        mode.pack(side="left", padx=6)
+        mode.bind("<<ComboboxSelected>>", self.refresh_rule_catalogue)
+        self._enable_widget_clipboard(mode, editable=False)
+        ttk.Checkbutton(filters, text="Показывать историю правил", variable=self.knowledge_history_var,
+                        command=self.refresh_rule_catalogue).pack(side="left")
+        ttk.Button(filters, text="Обновить", command=self.refresh_rule_catalogue).pack(side="right")
+        search = ttk.Frame(tab)
+        search.pack(fill="x", pady=(0, 6))
+        ttk.Label(search, text="Поиск по ID, названию и тексту").pack(side="left")
+        self.knowledge_query_var = tk.StringVar()
+        query = ttk.Entry(search, textvariable=self.knowledge_query_var)
+        query.pack(side="left", fill="x", expand=True, padx=6)
+        query.bind("<Return>", self.refresh_rule_catalogue)
+        self._enable_widget_clipboard(query, editable=True)
+        ttk.Button(search, text="Найти", command=self.refresh_rule_catalogue).pack(side="right")
+        self.knowledge_pages = ttk.Notebook(tab)
+        self.knowledge_pages.pack(fill="both", expand=True)
+
+        catalogue = ttk.Frame(self.knowledge_pages, padding=4)
+        self.knowledge_pages.add(catalogue, text="Каталог правил")
+        split = ttk.Panedwindow(catalogue, orient="vertical")
+        split.pack(fill="both", expand=True)
+        table = ttk.Frame(split)
+        detail = ttk.Frame(split)
+        split.add(table, weight=2)
+        split.add(detail, weight=3)
+        columns = ("id", "title", "status", "modes", "replaced_by")
+        self.rule_tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse", height=8)
+        for key, title, width in zip(columns, ("ID", "Название", "Статус", "Виды работ", "Заменено правилом"),
+                                      (240, 280, 155, 220, 240)):
+            self.rule_tree.heading(key, text=title)
+            self.rule_tree.column(key, width=width, minwidth=100, stretch=key == "title")
+        self.rule_tree.grid(row=0, column=0, sticky="nsew")
+        scroll_y = ttk.Scrollbar(table, orient="vertical", command=self.rule_tree.yview)
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x = ttk.Scrollbar(table, orient="horizontal", command=self.rule_tree.xview)
+        scroll_x.grid(row=1, column=0, sticky="ew")
+        self.rule_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        table.rowconfigure(0, weight=1)
+        table.columnconfigure(0, weight=1)
+        self.rule_tree.bind("<<TreeviewSelect>>", self.load_catalogue_rule)
+        self.rule_info_var = tk.StringVar(value="Выберите правило. История доступна только для чтения.")
+        info = ttk.Label(detail, textvariable=self.rule_info_var, justify="left", wraplength=700)
+        info.pack(fill="x", pady=4)
+        info.bind("<Configure>", lambda event: info.configure(wraplength=max(200, event.width - 8)))
+        self.rule_editor = self._knowledge_text(detail, editable=True)
+        rule_actions = ttk.Frame(detail)
+        rule_actions.pack(fill="x", pady=6)
+        self.rule_canonical_button = ttk.Button(rule_actions, text="Открыть единый текст", command=self.open_canonical_rule,
+                                                state="disabled")
+        self.rule_canonical_button.pack(side="left")
+        self.rule_save_button = ttk.Button(rule_actions, text="Сохранить текст правила", command=self.save_catalogue_rule,
+                                           state="disabled")
+        self.rule_save_button.pack(side="right")
+        self._rule_rows: dict[str, dict] = {}
+        self._catalogue_rows: list[dict] = []
+        self._selected_rule: dict = {}
+        self._rule_loaded_text = ""
+        self._rule_selected_iid = ""
+        self._knowledge_filter = ("Все виды работ", False)
+
+        full = ttk.Frame(self.knowledge_pages, padding=4)
+        self.knowledge_pages.add(full, text="Полные инструкции")
+        full_pane = ttk.Panedwindow(full, orient="horizontal")
+        full_pane.pack(fill="both", expand=True)
+        full_left, full_right = ttk.Frame(full_pane), ttk.Frame(full_pane)
+        full_pane.add(full_left, weight=1)
+        full_pane.add(full_right, weight=4)
+        self.knowledge_full_list = tk.Listbox(full_left, exportselection=False, width=28)
+        self.knowledge_full_list.pack(fill="both", expand=True)
+        self.knowledge_full_list.bind("<<ListboxSelect>>", self.load_resolved_instruction)
+        self._enable_listbox_copy(self.knowledge_full_list)
+        ttk.Label(full_right, text="Полный текст с раскрытыми правилами; только чтение.").pack(anchor="w", pady=4)
+        self.knowledge_full_text = self._knowledge_text(full_right, editable=False)
+
+        source = ttk.Frame(self.knowledge_pages, padding=4)
+        self.knowledge_pages.add(source, text="Исходные файлы")
+        ttk.Label(source, text="Технический редактор. Единый текст правила редактируется в каталоге.").pack(anchor="w", pady=4)
+        pane = ttk.Panedwindow(source, orient="horizontal")
         pane.pack(fill="both", expand=True)
         left = ttk.Frame(pane)
         right = ttk.Frame(pane)
@@ -561,13 +646,48 @@ class FireAuditGUI(tk.Tk):
         self.knowledge_list.pack(fill="both", expand=True)
         self.knowledge_list.bind("<<ListboxSelect>>", self.load_knowledge_file)
         self._enable_listbox_copy(self.knowledge_list)
-        for item in self.app.knowledge.inventory():
+        inventory = self.app.knowledge.inventory()
+        for item in inventory:
             self.knowledge_list.insert("end", item["name"])
-        self.knowledge_editor = tk.Text(right, wrap="word", undo=True, font=("Consolas", 10))
-        self.knowledge_editor.pack(fill="both", expand=True)
-        self._enable_text_clipboard(self.knowledge_editor, editable=True)
-        self._tab_scroll_targets[tab] = self.knowledge_editor
-        ttk.Button(right, text="Сохранить с резервной копией", command=self.save_knowledge_file).pack(anchor="e", pady=6)
+        self.knowledge_editor = self._knowledge_text(right, editable=True)
+        self.knowledge_source_save = ttk.Button(right, text="Сохранить с резервной копией", command=self.save_knowledge_file)
+        self.knowledge_source_save.pack(anchor="e", pady=6)
+        self.knowledge_full_list.insert("end", "Все инструкции выбранного вида работы")
+        for item in inventory:
+            if item["name"].lower().endswith(".md"):
+                self.knowledge_full_list.insert("end", item["name"])
+
+        history = ttk.Frame(self.knowledge_pages, padding=4)
+        self.knowledge_pages.add(history, text="История изменений")
+        ttk.Label(history, text="Сохранённые снимки правил; показан исходный текст на дату сохранения.").pack(anchor="w", pady=4)
+        history_pane = ttk.Panedwindow(history, orient="horizontal")
+        history_pane.pack(fill="both", expand=True)
+        history_left, history_right = ttk.Frame(history_pane), ttk.Frame(history_pane)
+        history_pane.add(history_left, weight=1)
+        history_pane.add(history_right, weight=4)
+        self.knowledge_history_list = tk.Listbox(history_left, exportselection=False, width=28)
+        self.knowledge_history_list.pack(fill="both", expand=True)
+        self.knowledge_history_list.bind("<<ListboxSelect>>", self.load_knowledge_history)
+        self._enable_listbox_copy(self.knowledge_history_list)
+        self.knowledge_history_text = self._knowledge_text(history_right, editable=False)
+        targets = {str(catalogue): self.rule_editor, str(full): self.knowledge_full_text,
+                   str(source): self.knowledge_editor, str(history): self.knowledge_history_text}
+        self.knowledge_pages.bind("<<NotebookTabChanged>>",
+                                  lambda event: self._tab_scroll_targets.update({tab: targets[self.knowledge_pages.select()]}))
+        self.refresh_rule_catalogue()
+
+    def _knowledge_text(self, parent, *, editable: bool) -> tk.Text:
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+        text = tk.Text(frame, wrap="word", undo=editable, font=("Consolas", 10))
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        scrollbar.pack(side="right", fill="y")
+        text.configure(yscrollcommand=scrollbar.set)
+        text.pack(side="left", fill="both", expand=True)
+        self._enable_text_clipboard(text, editable=editable)
+        if not editable:
+            text.configure(state="disabled")
+        return text
 
     def refresh_projects(self) -> None:
         selected_slug = self.current_slug
@@ -989,20 +1109,224 @@ class FireAuditGUI(tk.Tk):
         self.norm_results.delete("1.0", "end")
         self.norm_results.insert("1.0", json.dumps(results, ensure_ascii=False, indent=2))
 
+    def _knowledge_mode(self) -> str | None:
+        return self.mode_values.get(self.knowledge_mode_var.get())
+
+    @staticmethod
+    def _rule_status_label(row: dict) -> str:
+        status = row.get("effective_status", row.get("status", ""))
+        return {"active": "Действует", "replaced": "Заменено в этом режиме",
+                "superseded": "Заменено", "historical": "Историческая редакция",
+                "archive_snapshot": "Архивный снимок",
+                "partial": "Частично заменено", "partially_replaced": "Частично заменено",
+                "not_applicable": "Не относится к режиму"}.get(status, status)
+
+    @staticmethod
+    def _set_knowledge_text(widget, text: str, *, editable: bool = False) -> None:
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.edit_reset()
+        widget.configure(state="normal" if editable else "disabled")
+
+    def _confirm_rule_discard(self) -> bool:
+        if not self._selected_rule.get("editable"):
+            return True
+        if self.rule_editor.get("1.0", "end-1c") == self._rule_loaded_text:
+            return True
+        return messagebox.askyesno("Несохранённый текст", "Отменить несохранённые изменения текста правила?", parent=self)
+
+    def refresh_rule_catalogue(self, event=None) -> None:
+        if not self._confirm_rule_discard():
+            self.knowledge_mode_var.set(self._knowledge_filter[0])
+            self.knowledge_history_var.set(self._knowledge_filter[1])
+            return
+        try:
+            rows = self.app.knowledge.effective_rule_catalogue(
+                mode=self._knowledge_mode(), include_history=self.knowledge_history_var.get())
+            history = self.app.knowledge.knowledge_history()
+        except (ValueError, OSError, KeyError) as exc:
+            messagebox.showerror("Каталог правил", str(exc), parent=self)
+            self.knowledge_mode_var.set(self._knowledge_filter[0])
+            self.knowledge_history_var.set(self._knowledge_filter[1])
+            return
+        selected_key = (self._selected_rule.get("id"), self._selected_rule.get("history_ref"),
+                        self._selected_rule.get("source"))
+        self._knowledge_filter = (self.knowledge_mode_var.get(), self.knowledge_history_var.get())
+        self._catalogue_rows = rows
+        query = self.knowledge_query_var.get().strip().casefold()
+        rows = [row for row in rows if not query or query in "\n".join(
+                (row["id"], row.get("title", ""), row.get("text", ""))).casefold()]
+        self._rule_rows = {}
+        self._selected_rule = {}
+        self._rule_selected_iid = ""
+        self._rule_loaded_text = ""
+        self.rule_tree.delete(*self.rule_tree.get_children())
+        labels = {value: label for label, value in self.mode_values.items()}
+        select_iid = ""
+        for index, row in enumerate(rows):
+            iid = f"rule-{index}"
+            self._rule_rows[iid] = row
+            mode_labels = ", ".join(labels.get(value, value) for value in row.get("modes", []))
+            self.rule_tree.insert("", "end", iid=iid, values=(row["id"], row.get("title", row["id"]),
+                self._rule_status_label(row), mode_labels, ", ".join(row.get("replaced_by", []))))
+            if (row.get("id"), row.get("history_ref"), row.get("source")) == selected_key:
+                select_iid = iid
+        self._set_knowledge_text(self.rule_editor, "")
+        self.rule_save_button.configure(state="disabled")
+        self.rule_canonical_button.configure(state="disabled")
+        self.rule_info_var.set(f"Правил в списке: {len(rows)} из {len(self._catalogue_rows)}. "
+                               "Выберите правило; исторические редакции доступны только для чтения.")
+        self._knowledge_history_rows = history
+        self.knowledge_history_list.delete(0, "end")
+        for row in history:
+            self.knowledge_history_list.insert("end", row["name"])
+        self._set_knowledge_text(self.knowledge_history_text, "")
+        if select_iid:
+            self.rule_tree.selection_set(select_iid)
+            self.load_catalogue_rule()
+        self.load_resolved_instruction()
+
+    def load_catalogue_rule(self, event=None) -> None:
+        selected = self.rule_tree.selection()
+        if not selected or selected[0] not in self._rule_rows or selected[0] == self._rule_selected_iid:
+            return
+        if not self._confirm_rule_discard():
+            if self._rule_selected_iid:
+                self.rule_tree.selection_set(self._rule_selected_iid)
+            return
+        row = dict(self._rule_rows[selected[0]])
+        try:
+            # Never resolve an archived ID through read_rule: it returns today's text.
+            if row.get("editable") and not row.get("historical"):
+                current = self.app.knowledge.read_rule(row["id"])
+                row.update({key: current[key] for key in ("text", "source_sha256", "editable") if key in current})
+        except (ValueError, OSError, KeyError) as exc:
+            messagebox.showerror("Чтение правила", str(exc), parent=self)
+            return
+        editable = bool(row.get("editable")) and not row.get("historical")
+        row["editable"] = editable
+        self._selected_rule = row
+        self._rule_selected_iid = selected[0]
+        self._rule_loaded_text = row.get("text", "")
+        self._set_knowledge_text(self.rule_editor, self._rule_loaded_text, editable=editable)
+        self.rule_save_button.configure(state="normal" if editable else "disabled")
+        canonical_id = row.get("canonical_id")
+        has_canonical = any(item.get("id") == canonical_id and item.get("editable") and not item.get("historical")
+                            for item in self._catalogue_rows)
+        self.rule_canonical_button.configure(state="normal" if canonical_id and has_canonical else "disabled")
+        labels = {value: label for label, value in self.mode_values.items()}
+        details = [f"ID: {row['id']} — {row.get('title', row['id'])}",
+                   f"{self._rule_status_label(row)}. Источник: {row.get('history_ref') or row.get('source', '')}",
+                   "Виды работ: " + ", ".join(labels.get(value, value) for value in row.get("modes", []))]
+        if row.get("replaced_by"):
+            details.append("Заменено: " + ", ".join(row["replaced_by"]))
+        if row.get("effective_modes"):
+            details.append("Действует для: " + ", ".join(labels.get(value, value) for value in row["effective_modes"]))
+        if row.get("replaced_modes"):
+            details.append("Заменено для: " + ", ".join(labels.get(value, value) for value in row["replaced_modes"]))
+        if canonical_id:
+            details.append("Единый текст: " + canonical_id)
+        if row.get("requires"):
+            details.append("Связанные правила: " + ", ".join(row["requires"]))
+        if editable:
+            details.append("Редактируется единый текст; изменение применяется во всех указанных видах работ.")
+        elif row.get("historical"):
+            details.append("Только чтение. Сохранённый исторический текст не заменяется текущей редакцией.")
+        else:
+            details.append("Только чтение. Для изменения текста откройте связанное единое правило.")
+        self.rule_info_var.set("\n".join(details))
+
+    def open_canonical_rule(self) -> None:
+        canonical_id = self._selected_rule.get("canonical_id")
+        if canonical_id and not any(row.get("id") == canonical_id and row.get("editable")
+                                    for row in self._rule_rows.values()):
+            self.knowledge_query_var.set(canonical_id)
+            self.refresh_rule_catalogue()
+        for iid, row in self._rule_rows.items():
+            if row.get("id") == canonical_id and row.get("editable") and not row.get("historical"):
+                self.rule_tree.selection_set(iid)
+                self.rule_tree.see(iid)
+                self.load_catalogue_rule()
+                return
+
+    def save_catalogue_rule(self) -> None:
+        row = self._selected_rule
+        if not row.get("editable") or row.get("historical"):
+            return
+        text = self.rule_editor.get("1.0", "end-1c").strip()
+        try:
+            self.app.knowledge.validate_rule_text(row["id"], text)
+        except (ValueError, OSError, KeyError) as exc:
+            messagebox.showerror("Проверка правила", f"Правило не сохранено: {exc}", parent=self)
+            return
+        if not messagebox.askyesno("Постоянное правило",
+                f"Сохранить единый текст правила {row['id']}?\n"
+                "Изменение применяется во всех видах работ этого правила. Предыдущая редакция останется в истории; будет создана резервная копия.",
+                parent=self):
+            return
+        try:
+            result = self.app.knowledge.save_rule_text(row["id"], text, expected_sha256=row.get("source_sha256"))
+        except (ValueError, OSError, KeyError, NormativeUpdateBusy) as exc:
+            messagebox.showerror("Сохранение правила", f"Правило не сохранено: {exc}", parent=self)
+            return
+        self._rule_loaded_text = text
+        self._set_knowledge_text(self.rule_editor, text, editable=True)
+        self.status_var.set(f"Сохранено правило {row['id']}; история: {result['history_path']}")
+        self.refresh_rule_catalogue()
+
+    def load_resolved_instruction(self, event=None) -> None:
+        selected = self.knowledge_full_list.curselection()
+        if not selected:
+            return
+        try:
+            if selected[0] == 0:
+                mode = self._knowledge_mode()
+                text = (self.app.knowledge.snapshot_for_mode(mode).context if mode else
+                        "Выберите конкретный вид работы в верхней строке, чтобы увидеть полный набор его инструкций.")
+            else:
+                text = self.app.knowledge.resolved_document(self.knowledge_full_list.get(selected[0]), mode=self._knowledge_mode())
+        except (ValueError, OSError, KeyError) as exc:
+            messagebox.showerror("Полная инструкция", str(exc), parent=self)
+            return
+        self._set_knowledge_text(self.knowledge_full_text, text)
+
+    def load_knowledge_history(self, event=None) -> None:
+        selected = self.knowledge_history_list.curselection()
+        if not selected:
+            return
+        row = self._knowledge_history_rows[selected[0]]
+        try:
+            text = row.get("text")
+            if text is None:
+                path = Path(row["path"]).resolve()
+                history_root = (self.app.paths.knowledge / "history").resolve()
+                if not path.is_relative_to(history_root):
+                    raise ValueError("Файл истории находится вне папки истории правил")
+                text = path.read_text(encoding="utf-8-sig")
+        except (ValueError, OSError, KeyError) as exc:
+            messagebox.showerror("История правил", str(exc), parent=self)
+            return
+        self._set_knowledge_text(self.knowledge_history_text, text)
+
     def load_knowledge_file(self, event=None) -> None:
         selected = self.knowledge_list.curselection()
         if not selected:
             return
         name = self.knowledge_list.get(selected[0])
         path = self.app.paths.knowledge / name
-        self.knowledge_editor.delete("1.0", "end")
-        self.knowledge_editor.insert("1.0", path.read_text(encoding="utf-8-sig"))
+        editable = name != "rule_blocks.json"
+        self._set_knowledge_text(self.knowledge_editor, path.read_text(encoding="utf-8-sig"), editable=editable)
+        self.knowledge_source_save.configure(state="normal" if editable else "disabled")
 
     def save_knowledge_file(self) -> None:
         selected = self.knowledge_list.curselection()
         if not selected:
             return
         name = self.knowledge_list.get(selected[0])
+        if name == "rule_blocks.json":
+            messagebox.showinfo("Единый текст правила", "Редактируйте текст выбранного правила во вкладке «Каталог правил».", parent=self)
+            return
         path = self.app.paths.knowledge / name
         text = self.knowledge_editor.get("1.0", "end").rstrip() + "\n"
         try:
@@ -1017,6 +1341,8 @@ class FireAuditGUI(tk.Tk):
         shutil.copy2(path, backup)
         atomic_write_text(path, text)
         self.status_var.set(f"Сохранено: {name}; резервная копия: {backup.name}")
+        if hasattr(self, "rule_tree"):
+            self.refresh_rule_catalogue()
 
 
 if __name__ == "__main__":

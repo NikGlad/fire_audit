@@ -531,7 +531,7 @@ class MCPServer:
     def dispatch_tool(self, name: str, args: dict[str, Any]) -> Any:
         app = self.app
         if name == "get_barrier_plan_contract":
-            return {"instruction": app.knowledge.load_document("21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md").text}
+            return {"instruction": app.knowledge.resolved_document("21_ПОСТРОЕНИЕ_И_ПРОВЕРКА_ПП.md", "barrier_assessment")}
         if name == "prepare_barrier_plan":
             return app.barrier_workflow.prepare(**args)
         if name == "get_barrier_status":
@@ -574,10 +574,7 @@ class MCPServer:
             # Return one revision even if the shared instructions are edited
             # while this response is being assembled.
             snapshot = app.knowledge.snapshot_for_mode(mode)
-            quality_control = next(
-                document.text for document in snapshot.documents
-                if document.name == "22_ПРЯМАЯ_РАБОТА_ПОМОЩНИКА.md"
-            )
+            quality_control = dict(snapshot.rendered_documents)["22_ПРЯМАЯ_РАБОТА_ПОМОЩНИКА.md"]
             return {
                 "project": project,
                 "additional_data": inputs_for(project),
