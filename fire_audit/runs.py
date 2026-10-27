@@ -513,6 +513,7 @@ class RunStore:
                 "barrier_plan_and_all_legend_colors_must_match": True,
                 "barrier_EI45_subtypes_share_partition1_color_and_legend_row": True,
                 "communication_shafts_excluded_from_barrier_assessment": True,
+                "communication_shafts_general_legend_note_required": True,
                 "communication_shafts_not_considered_when_overlapping_other_barriers": True,
                 "firelift_hall_door_callout_when_no_MGN_zone": True,
                 "firelift_hall_door_callout_only_user_authorized_floors": True,

@@ -305,6 +305,13 @@
     "consider_in_shared_boundary": false,
     "consider_when_overlapping_other_barriers": false,
     "include_in_legend": false,
+    "legend_general_note": {
+      "required": true,
+      "text_ref": "barrier_communication_shafts_legend_note_20261027",
+      "verbatim": true,
+      "color_sample_required": false,
+      "preserve_when_no_shaft_lines": true
+    },
     "include_in_required_barrier_register": false,
     "create_dimension_or_enclosure_query": false,
     "stair_volume_excluded": true,

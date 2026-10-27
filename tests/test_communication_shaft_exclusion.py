@@ -15,6 +15,14 @@ OLD_RULES = {
     'barrier_stair_volume_shafts_20261023',
     'barrier_stair_internal_shafts_and_full_enclosure_20261023',
 }
+LEGEND_NOTE_ID = 'barrier_communication_shafts_legend_note_20261027'
+LEGEND_NOTE = (
+    'Каналы и шахты для прокладки коммуникаций необходимо выделить противопожарными перегородками EI45 '
+    'заполнением проемов EI30 (ст.88 ч.15 ФЗ №123). Шахты и воздуховоды систем дымоудаления и общеобменной '
+    'вентиляции выполнять с соблюдением требований к огнестойкости, материалам и условиям прокладки по '
+    'СП 7.13130.2013 и СП 60.13330.2020. Предусматривать необходимые защитные короба и огнестойкую '
+    'заделку проходок с учётом назначения систем, пересекаемых помещений и пожарных отсеков.'
+)
 
 
 class CommunicationShaftExclusionTests(unittest.TestCase):
@@ -59,6 +67,28 @@ class CommunicationShaftExclusionTests(unittest.TestCase):
 class CommunicationShaftRunSnapshotTests(unittest.TestCase):
     setUp = snapshot_tests.RunRuleSnapshotTests.setUp
     assert_consistent_artifacts = snapshot_tests.RunRuleSnapshotTests.assert_consistent_artifacts
+
+    def test_verbatim_general_note_reaches_both_variants_without_enabling_shaft_graphics(self):
+        profile = json.loads((ROOT / 'knowledge/barrier_drawing_profile.json').read_text(encoding='utf-8'))
+        policy = profile['communication_shaft_rule']
+        note = policy['legend_general_note']
+        self.assertTrue(note['required'])
+        self.assertEqual(note['text_ref'], LEGEND_NOTE_ID)
+        self.assertTrue(note['verbatim'])
+        self.assertTrue(note['preserve_when_no_shaft_lines'])
+        self.assertFalse(note['color_sample_required'])
+        self.assertFalse(policy['include_in_legend'])
+        self.assertFalse(policy['build_enclosure'])
+        for variant in ('full_execution', 'analysis_word'):
+            with self.subTest(variant=variant):
+                result = self.app.runs.create('first', 'barrier_assessment', task_variant=variant)
+                self.assert_consistent_artifacts(result)
+                self.assertTrue(result['run']['hard_constraints']['communication_shafts_general_legend_note_required'])
+                self.assertTrue(result['run']['hard_constraints']['communication_shafts_excluded_from_barrier_assessment'])
+                task = Path(result['task_file']).read_text(encoding='utf-8-sig')
+                self.assertIn(LEGEND_NOTE, task)
+                self.assertIn('Это пояснение без отдельного цветового образца', task)
+                self.assertIn('сохранять это общее пояснение независимо от наличия линий', task)
 
     def test_new_run_receives_exclusion_without_old_drawing_requirements(self):
         result = self.app.runs.create('first', 'barrier_assessment')
