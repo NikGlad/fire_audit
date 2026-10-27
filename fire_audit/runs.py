@@ -515,6 +515,8 @@ class RunStore:
                 "communication_shafts_excluded_from_barrier_assessment": True,
                 "communication_shafts_general_legend_note_required": True,
                 "communication_shafts_not_considered_when_overlapping_other_barriers": True,
+                "recessed_cabinets_not_communication_shafts_for_fire_resistance": True,
+                "recessed_cabinet_fire_resistance_requires_independent_basis": True,
                 "firelift_hall_door_callout_when_no_MGN_zone": True,
                 "firelift_hall_door_callout_only_user_authorized_floors": True,
                 "draw_stair_enclosures_as_separate_boundaries": profile.get("stair_enclosure_rule", {}).get("draw_separate_enclosure") is True,

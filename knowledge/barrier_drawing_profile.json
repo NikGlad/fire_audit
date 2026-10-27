@@ -351,6 +351,11 @@
   },
   "cabinet_wall_rule": {
     "route": "actual_inner_constructive_sides_behind_recess",
+    "fire_resistance_classification": "cabinet_or_recess_not_communication_shaft",
+    "classification_rule_ref": "barrier_recessed_cabinets_not_communication_shafts_20261027",
+    "shaft_requirements_define_fire_resistance": false,
+    "communication_equipment_alone_is_not_a_shaft_basis": true,
+    "independent_boundary_basis_required": true,
     "retain_boundary_performance_and_color": true,
     "ordinary_corridor_line_across_access_front": false,
     "independent_opening_requirements_preserved": true,
