@@ -330,15 +330,6 @@
       "text_ref": "doc_18_082"
     },
     {
-      "id": "barrier_integrated_safety_zone_shafts_20261019",
-      "status": "active",
-      "modes": [
-        "barrier_assessment"
-      ],
-      "replaces": [],
-      "text_ref": "doc_18_083"
-    },
-    {
       "id": "barrier_sp2_5_3_6_callout_template_20261019",
       "status": "active",
       "modes": [
@@ -367,15 +358,6 @@
         "barrier_unique_characteristic_colors_20261021"
       ],
       "text_ref": "shared_008"
-    },
-    {
-      "id": "barrier_communication_shafts_EI45_20261021",
-      "status": "active",
-      "modes": [
-        "barrier_assessment"
-      ],
-      "replaces": [],
-      "text_ref": "barrier_communication_shafts_EI45_20261021"
     },
     {
       "id": "barrier_firelift_hall_addressed_doors_20261021",
@@ -414,15 +396,6 @@
       "history_ref": "history/overrides_20261026.json#barrier_facade_rays_dimensions_layer_20261023"
     },
     {
-      "id": "barrier_stair_volume_shafts_20261023",
-      "status": "superseded",
-      "modes": [
-        "barrier_assessment"
-      ],
-      "replaces": [],
-      "history_ref": "history/overrides_20261026.json#barrier_stair_volume_shafts_20261023"
-    },
-    {
       "id": "barrier_recessed_cabinet_wall_route_20261023",
       "status": "active",
       "modes": [
@@ -459,17 +432,6 @@
       "text_ref": "shared_021"
     },
     {
-      "id": "barrier_stair_internal_shafts_and_full_enclosure_20261023",
-      "status": "active",
-      "modes": [
-        "barrier_assessment"
-      ],
-      "replaces": [
-        "barrier_stair_volume_shafts_20261023"
-      ],
-      "text_ref": "shared_017"
-    },
-    {
       "id": "barrier_numeric_only_mm_dimensions_20261023",
       "status": "active",
       "modes": [
@@ -488,6 +450,24 @@
         "barrier_facade_rays_dimensions_layer_20261023"
       ],
       "text_ref": "barrier_dimension_layer_depends_on_verified_ray_20261023"
+    },
+    {
+      "id": "barrier_communication_shafts_excluded_20261027",
+      "status": "active",
+      "modes": [
+        "barrier_assessment"
+      ],
+      "replaces": [],
+      "text_ref": "barrier_communication_shafts_excluded_20261027"
+    },
+    {
+      "id": "barrier_complete_stair_enclosure_20261027",
+      "status": "active",
+      "modes": [
+        "barrier_assessment"
+      ],
+      "replaces": [],
+      "text_ref": "shared_017"
     }
   ]
 }

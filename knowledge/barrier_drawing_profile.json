@@ -235,21 +235,20 @@
     "barrier_characteristic_color_table_required": true,
     "barrier_plan_and_all_legend_colors_must_match": true,
     "single_legend_row_per_color_equivalence_group": true,
-    "communication_shafts_EI45_include_corridor_faces": true,
     "firelift_hall_smoke_tight_door_callouts_required": true,
     "door_callout_scope_follows_user_floor_scope": true,
     "facade_callouts_rays_and_dimensions_on_output_layer": false,
     "facade_rays_target_actual_corresponding_dimensions": true,
-    "stair_volume_shaft_exception_reviewed": true,
     "recessed_cabinet_wall_route_reviewed": true,
     "basement_common_stair_dividers_reviewed": true,
     "unexplained_hooks_and_duplicate_segments_resolved": true,
     "current_customer_edits_preserved": true,
     "all_dimension_labels_numeric_mm_only": true,
-    "internal_stair_shafts_EI45_and_full_outer_enclosure_reviewed": true,
     "facade_callouts_rays_on_output_layer": true,
     "only_ray_target_dimensions_on_output_layer": true,
-    "all_other_working_dimensions_on_explanation_layer": true
+    "all_other_working_dimensions_on_explanation_layer": true,
+    "communication_shafts_excluded_from_assessment": true,
+    "full_outer_stair_enclosure_reviewed": true
   },
   "color_policy": {
     "id": "barrier_unified_EI45_color_group_20261021",
@@ -277,8 +276,7 @@
       "members": [
         "partition_1",
         "ordinary_lift",
-        "interward",
-        "communication_shaft"
+        "interward"
       ],
       "legend_name": "Противопожарная перегородка 1-го типа EI 45",
       "opening_fill": "Заполнение проёмов 2-го типа:\nдвери, ворота, люки EI 30;\nпри остеклении дверей >25% — EIW 30;\nокна E 30 (неоткрывающиеся).",
@@ -298,25 +296,20 @@
     }
   ],
   "communication_shaft_rule": {
-    "draw_all_identified": true,
-    "color_group": "partition_1",
-    "corridor_side_required": true,
-    "stronger_shared_boundary_preserved_once": true,
-    "geometry_must_be_source_confirmed": true,
-    "actual_AR_wall_faces_take_priority_over_hatch_voids": true,
-    "unverified_diagonal_or_closing_edges_forbidden": true,
-    "incomplete_source_enclosure_requires_addressed_AR_query": true,
-    "stair_volume_exception": false,
-    "stair_internal_separation_requires_independent_basis": false,
-    "stair_enclosure_includes_outer_boundary_behind_shafts": true,
-    "cabinet_access_front_not_corridor_line": true,
-    "cabinet_and_shaft_classification_requires_plan_geometry": true,
-    "stair_common_volume_requires_actual_wall_thickness_and_connection": true,
-    "room_bounding_box_does_not_define_shaft_width": true,
-    "internal_stair_shaft_partition_EI45_required": true,
-    "internal_stair_shaft_color_index": 6,
-    "outer_stair_enclosure_complete_independently": true,
-    "internal_shaft_and_outer_stair_are_distinct_boundaries": true
+    "scope": "all_objects_all_floors",
+    "assessment": "excluded",
+    "draw_all_identified": false,
+    "assign_fire_resistance": false,
+    "assign_color": false,
+    "build_enclosure": false,
+    "consider_in_shared_boundary": false,
+    "consider_when_overlapping_other_barriers": false,
+    "include_in_legend": false,
+    "include_in_required_barrier_register": false,
+    "create_dimension_or_enclosure_query": false,
+    "stair_volume_excluded": true,
+    "NT_and_MGN_zones_excluded": true,
+    "lift_and_hoist_shafts_excluded": false
   },
   "firelift_hall_door_callout_rule": {
     "required_for_independent_requirement": true,
@@ -437,5 +430,9 @@
     "equal_or_unknown_date_requires_confirmed_edition_basis": true,
     "unconfirmed_transition_requires_addressed_query": true,
     "automatic_boundary_inclusivity_is_forbidden": true
+  },
+  "recessed_cabinet_rule": {
+    "cabinet_access_front_not_corridor_line": true,
+    "classification_requires_plan_geometry": true
   }
 }

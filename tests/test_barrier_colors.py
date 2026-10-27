@@ -24,11 +24,11 @@ class BarrierColorTests(unittest.TestCase):
         group = profile["color_equivalence_groups"][0]
         self.assertEqual(group["canonical_key"], "partition_1")
         self.assertEqual(group["color_index"], 6)
-        self.assertTrue({"ordinary_lift", "interward", "communication_shaft"}.issubset(group["members"]))
+        self.assertTrue({"ordinary_lift", "interward"}.issubset(group["members"]))
         self.assertFalse({"ordinary_lift", "interward"}.intersection(r["key"] for r in profile["legend"]))
 
     def test_separate_EI45_subtype_rows_are_rejected_even_with_unique_colors(self):
-        for key in ("ordinary_lift", "interward", "communication_shaft"):
+        for key in ("ordinary_lift", "interward"):
             errors = legend_color_errors([dict(key=key, name="EI 45", color_index=90)])
             self.assertTrue(any("единой строкой" in e for e in errors))
 

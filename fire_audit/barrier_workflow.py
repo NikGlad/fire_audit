@@ -39,7 +39,9 @@ def legend_color_errors(entries):
         errors.append("Легенда содержит повторяющиеся типы")
     displayed = {}
     for entry in entries:
-        if entry.get("key") in {"ordinary_lift", "interward", "communication_shaft"}:
+        if entry.get("key") == "communication_shaft":
+            errors.append("Коммуникационные шахты исключены из оценки преград и легенды")
+        if entry.get("key") in {"ordinary_lift", "interward"}:
             errors.append(
                 f"{entry.get('key')}: объединить обозначение EI 45 с единой строкой "
                 "partition_1 фиолетового цвета; отдельная строка легенды не допускается"
