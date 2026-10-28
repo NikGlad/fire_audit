@@ -200,6 +200,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         shared_ids = _ids(source.get("shared_graphic_ids", []))
         item_owned: set[str] = set()
         item_overrides: dict[str, str] = {}
+        accepted_lift_target_ids: set[str] = set()
         response_ids = _ids(response.get("entity_ids", []))
         consultant_ids = _ids(consultant.get("entity_ids", []))
         all_ids = source_ids | response_ids | consultant_ids
@@ -412,6 +413,35 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 layer_overrides[handle] = item_overrides[handle] = ACTIVE
             owned.update(returned_headers)
             item_owned.update(returned_headers)
+            # A shown lift vestibule can be accepted for one target without
+            # closing the other lifts or claiming that its systems are built.
+            for transfer in item.get("accepted_lift_vestibule_targets", []):
+                transfer = _mapping(transfer)
+                ids = _ids(transfer.get("entity_ids", []))
+                ray = transfer.get("ray_id")
+                target_matches = [target for finding in registry.get("findings", [])
+                                  if _mapping(finding.get("source")).get("main_text_id") == main_id
+                                  for target in finding.get("targets", []) if target.get("ray_id") == ray]
+                target = target_matches[0] if len(target_matches) == 1 else {}
+                target_ids = _ids(target.get("graphic_ids", [])) | ({ray} if ray else set())
+                valid = (registry.get("mode") == "actualization_protocol" and response_status == "received"
+                         and decision == "partially_accepted" and physical_has_violation
+                         and checkability == "checkable" and bool(ids) and ids == target_ids
+                         and ids <= source_ids - protected_headers - response_ids - consultant_ids - shared_ids
+                         and ids <= changed | created and transfer.get("plan_element_present") is True
+                         and transfer.get("accepted_response") is True
+                         and transfer.get("not_physical_system_verification") is True
+                         and bool(transfer.get("project_entity_ids"))
+                         and bool(transfer.get("normative_basis")) and bool(transfer.get("rule_reference"))
+                         and bool(transfer.get("evidence_reference"))
+                         and target.get("status") == "insufficient_data")
+                require(valid, f"{label}: поцелевой перенос тамбура-шлюза не подтверждён")
+                if valid:
+                    for handle in ids:
+                        expected[handle] = layer_overrides[handle] = item_overrides[handle] = PROTOCOL_RESOLVED
+                    owned.update(ids)
+                    item_owned.update(ids)
+                    accepted_lift_target_ids.update(ids)
         owned.update(response_ids | consultant_ids)
         item_owned.update(response_ids | consultant_ids)
 
@@ -434,7 +464,8 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 require(final_layer == ACTIVE, f"{label}: отклонённое или неустранённое замечание должно иметь действующий заголовок")
         if ordinary_remark and kind == "none" and physical == "unresolved":
             require(all((expected.get(h, before.get(h, {}).get("layer")) if planned_only else
-                         verified.get(h, {}).get("layer")) not in {RESOLVED, PROTOCOL_RESOLVED} for h in source_ids),
+                         verified.get(h, {}).get("layer")) not in {RESOLVED, PROTOCOL_RESOLVED}
+                        for h in source_ids - accepted_lift_target_ids),
                     f"{label}: полностью неустранённая группа не может сохраняться в слое устранения")
 
         if kind == "accepted_response":

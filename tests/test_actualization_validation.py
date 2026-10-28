@@ -305,6 +305,23 @@ class ActualizationValidationTests(unittest.TestCase):
             "colorIndex": 256, "linetype": "ByLayer", "lineWeight": "ByLayer"} for h in new["created_entity_ids"])
         result = validate_registry(registry, True)
         self.assertTrue(result["ok"], result["errors"])
+        # A new complete requirement needs no redundant consultant narrative.
+        silent = deepcopy(registry)
+        silent["findings"][-1]["addition_comment"] = {}
+        silent["findings"][-1]["created_entity_ids"].remove("NC")
+        silent["created_entity_ids"].remove("NC")
+        silent["verified_graphics"] = [e for e in silent["verified_graphics"] if e["handle"] != "NC"]
+        result = validate_registry(silent, True)
+        self.assertTrue(result["ok"], result["errors"])
+        normative = deepcopy(silent)
+        trace = normative["findings"][-1]["template_copy"]
+        trace["source_kind"] = "verified_normative_text"
+        trace["normative_source"] = {"rule_reference": "error_ro_18", "document": "СП 4.13130.2013",
+            "clause": "5.1.6", "edition": "Редакция на дату объекта", "reference": "norm.pdf#page=18",
+            "read_verified": True, "template_missing_verified": True, "full_text": "Шаблон"}
+        self.assertTrue(validate_registry(normative, True)["ok"])
+        trace["normative_source"]["read_verified"] = False
+        self.assertFalse(validate_registry(normative, True)["ok"])
         new["template_copy"]["source_group_fully_detected"] = False
         self.assertFalse(validate_registry(registry, True)["ok"])
         new["template_copy"]["source_group_fully_detected"] = True

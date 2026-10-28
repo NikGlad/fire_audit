@@ -115,6 +115,36 @@ class ProtocolValidationTests(unittest.TestCase):
         r["deleted_entity_ids"] = ["T"]
         self.assertInvalid(r)
 
+    def test_shown_lift_vestibule_transfers_only_its_target(self):
+        r = self.actualization_fixture(self.fixture("none"))
+        i = r["protocol"]["items"][0]
+        i["consultant"]["decision"] = "partially_accepted"
+        i["response"]["kind"] = "completed_correction"
+        i["transition"] = {"kind": "none", "entity_ids": [], "evidence": {"reason": "Есть тамбур только у одного лифта"}}
+        f = r["findings"][0]
+        f["targets"][0].update(status="insufficient_data", graphic_ids=["D"])
+        f["source"]["ray_ids"].append("R2")
+        f["targets"].append({"ray_id": "R2", "status": "unresolved", "reason": "Перед вторым лифтом тамбура нет"})
+        for e in r["verified_graphics"]: e["layer"] = ACTIVE
+        exemplar = r["verified_graphics"][0]
+        r["graphics_before"].append({**exemplar, "handle": "R2"})
+        r["verified_graphics"].append({**exemplar, "handle": "R2"})
+        for e in r["verified_graphics"]:
+            if e["handle"] in {"R", "D"}: e["layer"] = PROTOCOL_RESOLVED
+        r["changed_entity_ids"] = ["R", "D"]
+        f["changed_entity_ids"] = ["R", "D"]
+        i["accepted_lift_vestibule_targets"] = [{"ray_id": "R", "entity_ids": ["R", "D"],
+            "plan_element_present": True, "accepted_response": True, "not_physical_system_verification": True,
+            "project_entity_ids": ["W"], "normative_basis": "ч.20 ст.88 ФЗ123",
+            "rule_reference": "error_ro_13", "evidence_reference": "план и принятый ответ"}]
+        self.assertValid(r)
+        for defect in ("missing_plan", "header", "other_lift"):
+            invalid = deepcopy(r)
+            if defect == "missing_plan": invalid["protocol"]["items"][0]["accepted_lift_vestibule_targets"][0]["plan_element_present"] = False
+            if defect == "header": invalid["protocol"]["items"][0]["accepted_lift_vestibule_targets"][0]["entity_ids"].append("T")
+            if defect == "other_lift": next(e for e in invalid["verified_graphics"] if e["handle"] == "R2")["layer"] = PROTOCOL_RESOLVED
+            with self.subTest(defect=defect): self.assertInvalid(invalid)
+
     def fixture(self, kind="accepted_commitment", mode="protocol"):
         entity = lambda handle, layer: {"handle": handle, "layer": layer, "colorIndex": 256,
                                         "linetype": "ByLayer", "lineWeight": "ByLayer"}

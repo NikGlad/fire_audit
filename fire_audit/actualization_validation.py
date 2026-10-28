@@ -138,6 +138,14 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         if new_group:
             trace = finding.get("template_copy", {})
             approved_text = trace.get("source_kind") == "approved_rule_text"
+            normative_text = trace.get("source_kind") == "verified_normative_text"
+            if normative_text:
+                proof = trace.get("normative_source", {})
+                if (proof.get("rule_reference") != "error_ro_18" or proof.get("document") != "СП 4.13130.2013"
+                        or proof.get("clause") != "5.1.6" or not proof.get("edition") or not proof.get("reference")
+                        or proof.get("read_verified") is not True or proof.get("template_missing_verified") is not True
+                        or proof.get("full_text") != source.get("full_text")):
+                    errors.append(f"{label}: нормативный текст бельепровода не подтверждён по РО-18")
             if approved_text:
                 errors.extend(f"{label}: {error}" for error in approved_rule_text_errors(trace, registry.get("eligible_rule_text_sources")))
                 if source.get("full_text") != trace.get("approved_rule_text", {}).get("full_text"):
@@ -147,7 +155,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                             "text_styles_preserved", "relative_positions_preserved", "repeated_floor_group_copied_from_actualized_group"):
                     if trace.get(key) is not True:
                         errors.append(f"{label}: не подтверждено копирование шаблона: {key}")
-            if ((not approved_text and (trace.get("source_kind") not in {"source_approved_block", "previous_actualized_compliance_group"}
+            if ((not approved_text and (trace.get("source_kind") not in {"source_approved_block", "previous_actualized_compliance_group", "verified_normative_text"}
                     or len(set(trace.get("source_entity_ids", []))) < 3)) or not group_ids <= created
                     or len(added_targets) != len(targets) or source.get("ray_ids")):
                 errors.append(f"{label}: новая группа должна быть полной копией с новыми целями")
@@ -160,7 +168,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         if added_targets:
             comment = finding.get("addition_comment", {})
             explanation_ids = set(comment.get("entity_ids", []))
-            if (not blue_group and (not explanation_ids or not comment.get("text") or comment.get("mentions_new_places") is not True
+            if (not blue_group and not new_group and (not explanation_ids or not comment.get("text") or comment.get("mentions_new_places") is not True
                     or comment.get("history_preserved") is not True)):
                 errors.append(f"{label}: нет пояснения консультанта о новых местах с сохранением истории")
             if not explanation_ids <= changed | created:
