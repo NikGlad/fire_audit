@@ -13,7 +13,10 @@ class ErrorRegisterMethodsTests(unittest.TestCase):
         for mode in MODE_FILES:
             snapshot = self.kb.snapshot_for_mode(mode)
             self.assertIn(self.name, [d.name for d in snapshot.documents])
-            self.assertIn("РО-04.", snapshot.context)
+            if snapshot.instructions_pending:
+                self.assertNotIn("РО-04.", snapshot.context)
+            else:
+                self.assertIn("РО-04.", snapshot.context)
 
     def test_methods_have_no_project_facts(self):
         text = self.kb.resolved_document(self.name)
@@ -22,6 +25,21 @@ class ErrorRegisterMethodsTests(unittest.TestCase):
             self.assertIn(f"## РО-{index:02}.", text)
         self.assertIn("не сохранять DWG", text)
         self.assertIn("Отсутствие его в готовом пользовательском образце", text)
+
+    def test_laundry_card_resolves_in_shared_register_without_losing_its_scope(self):
+        for mode in MODE_FILES:
+            with self.subTest(mode=mode):
+                text = self.kb.resolved_document(self.name, mode=mode)
+                if mode in {"ar_assessment_transfer", "ar_plan_preparation", "ar_plan_comparison", "du_assessment"}:
+                    self.assertNotIn("ответ о наличии бельепроводов", text)
+                else:
+                    self.assertIn("РО-18. Бельепроводы и бельеприёмные камеры", text)
+                    self.assertIn("Для протокола и актуализации с протоколом ответ о наличии бельепроводов", text)
+                self.assertNotIn("{{rule:error_ro_18}}", text)
+
+    def test_shared_register_does_not_block_catalogue_editor_validation(self):
+        document = self.kb.load_document("rule_blocks.json")
+        self.kb.validate_document(document.name, document.text)
 
     def test_f11_block17_request_is_mandatory(self):
         text = self.kb.resolved_document(self.name)
