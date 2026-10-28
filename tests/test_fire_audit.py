@@ -300,6 +300,29 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertIn("в том числе открытую лестницу 2-го типа", task)
         self.assertIn("типовыми допущениями общих инструкций", task)
 
+    def test_actualization_checks_article89_before_other_review_and_issues_current_solutions(self) -> None:
+        self.create_ready_project()
+        result = self.app.runs.create("test", "actualization_protocol")
+        steps = result["run"]["steps"]
+        article89 = next(i for i, step in enumerate(steps) if "Первым содержательным этапом" in step)
+        changed_places = next(i for i, step in enumerate(steps) if "Найти все жёлтые облака" in step)
+        self.assertLess(article89, changed_places)
+        self.assertIn("всех этажах", steps[article89])
+        self.assertIn("пользовательские исключения", steps[article89])
+        self.assertIn("каждого варианта решения", steps[article89 + 1])
+        self.assertIn("без дублей", steps[article89 + 1])
+        rules = (Path(result["folder"]) / "ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8-sig")
+        self.assertIn("actualization_article89_first_stage_20261028", rules)
+        self.assertIn("без ограничения жёлтыми облаками изменений", rules)
+        self.assertIn("неработающий вариант", rules)
+        self.assertIn("допустимые и исключённые направления", rules)
+        self.assertIn("07_СТАТЬЯ_89.md", [d["name"] for d in result["run"]["knowledge_documents"]])
+
+    def test_standalone_protocol_does_not_receive_actualization_first_stage(self) -> None:
+        snapshot = self.app.knowledge.snapshot_for_mode("protocol")
+        self.assertNotIn("actualization_article89_first_stage_20261028", snapshot.context)
+        self.assertNotIn("Первый обязательный этап: проверка части 3 статьи 89", snapshot.context)
+
     def test_actualization_protocol_uses_approved_rules_and_preserves_scope(self) -> None:
         self.create_ready_project()
         context = self.app.knowledge.context_for_mode("actualization_protocol")
