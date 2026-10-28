@@ -51,6 +51,53 @@ class ProtocolValidationTests(unittest.TestCase):
         next(e for e in r["verified_graphics"] if e["handle"] == "T")["lineWeight"] = "LineWeight050"
         self.assertInvalid(r)
 
+    def test_resolved_plan_needs_no_confirmation_comment(self):
+        r = self.silent_fixture()
+        i = r["protocol"]["items"][0]
+        i["transition"]["kind"] = "plan_resolved"
+        i["consultant"]["omission_reason"] = "resolved_without_comment"
+        i["plan"].update(checkability="checkable", physical_status="resolved")
+        for entity in r["verified_graphics"]:
+            entity["layer"] = RESOLVED
+        self.assertValid(r)
+        for physical in ("unresolved", "partially_resolved", "insufficient_data"):
+            invalid = deepcopy(r)
+            invalid["protocol"]["items"][0]["plan"]["physical_status"] = physical
+            with self.subTest(physical=physical):
+                self.assertInvalid(invalid)
+        invalid = deepcopy(r)
+        invalid["protocol"]["items"][0]["plan"]["checkability"] = "not_checkable"
+        self.assertInvalid(invalid)
+
+    def test_partial_physical_return_reopens_protocol_header(self):
+        r = self.actualization_fixture(self.fixture("none"))
+        i = r["protocol"]["items"][0]
+        i["consultant"].update(decision="partially_accepted")
+        i["response"].update(kind="completed_correction", claims_fixed=True)
+        i["plan"].update(physical_status="partially_resolved")
+        i["transition"] = {"kind": "none", "entity_ids": [], "evidence": {"reason": "Один марш исправлен, второй остался узким"}}
+        f = r["findings"][0]
+        f.update(status="partially_resolved", returned_entity_ids=["T", "N", "F", "R", "D"],
+                 return_evidence={"project_entity_ids": ["W"], "method": "обмер", "result": "900 < 1200", "normative_basis": "СП1"})
+        f["source"]["ray_ids"].append("R2")
+        f["targets"][0].update(status="unresolved", returned_entity_ids=["R", "D"])
+        f["targets"].append({"ray_id": "R2", "status": "resolved", "reason": "Другая цель исправлена",
+                              "evidence": {"project_entity_ids": ["W2"], "method": "обмер", "result": "1300 >= 1200"}})
+        for e in r["graphics_before"]: e["layer"] = PROTOCOL_RESOLVED
+        for e in r["verified_graphics"]:
+            e["layer"] = ACTIVE if e["handle"] in {"T", "N", "F", "R", "D", "P"} else PROTOCOL_RESOLVED
+        exemplar = r["verified_graphics"][0]
+        r["graphics_before"].append({**exemplar, "handle": "R2", "layer": PROTOCOL_RESOLVED})
+        r["verified_graphics"].append({**exemplar, "handle": "R2", "layer": RESOLVED})
+        r["changed_entity_ids"] = ["T", "N", "F", "R", "D", "R2"]
+        f["changed_entity_ids"] = list(r["changed_entity_ids"])
+        self.assertValid(r)
+        invalid = deepcopy(r)
+        invalid["findings"][0]["return_evidence"] = {}
+        self.assertInvalid(invalid)
+        next(e for e in r["verified_graphics"] if e["handle"] == "N")["layer"] = PROTOCOL_RESOLVED
+        self.assertInvalid(r)
+
     def test_only_authorized_assistant_confirmation_can_be_removed(self):
         r = self.silent_fixture()
         r["graphics_layer_check"]["no_entities_deleted"] = False

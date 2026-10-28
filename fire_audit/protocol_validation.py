@@ -266,11 +266,15 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         if protocol.get("accepted_responses_without_comments") is True and kind in {"accepted_response", "accepted_commitment"}:
             require(silent_acceptance, f"{label}: принятый ответ оформляется переносом без подтверждающего комментария")
         if silent_acceptance:
+            accepted_protocol = (kind in {"accepted_response", "accepted_commitment"}
+                                 and consultant.get("omission_reason") == "accepted_response")
+            resolved_on_plan = (kind == "plan_resolved" and physical == "resolved"
+                                and checkability == "checkable"
+                                and consultant.get("omission_reason") == "resolved_without_comment")
             require(response_status == "received" and decision == "accepted"
-                    and kind in {"accepted_response", "accepted_commitment"}
-                    and consultant.get("omission_reason") == "accepted_response"
+                    and (accepted_protocol or resolved_on_plan)
                     and not consultant_ids,
-                    f"{label}: отсутствие комментария допустимо только для полностью принятого ответа с протокольным переносом")
+                    f"{label}: отсутствие комментария требует полностью принятого ответа и подтверждённого вида переноса")
         elif planned_only:
             require(bool(consultant.get("word_reference")) and consultant.get("planned_inside_original_block") is True,
                     f"{label}: Word-задание не содержит адреса пояснения и его размещения внутри исходного блока")
@@ -367,6 +371,20 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             require(source_ids <= set(before), f"{label}: не сохранены исходные слои группы без перехода")
             physical_target_ids = (physical_targets_by_main.get(main_id, set())
                                    - protected_headers - response_ids - consultant_ids)
+            # A partial physical return may reopen the original header while
+            # another target stays resolved. Ordinary actualization separately
+            # validates the return evidence and its per-target journal.
+            returned_headers = set()
+            if registry.get("mode") == "actualization_protocol":
+                for finding in registry.get("findings", []):
+                    if not isinstance(finding, dict):
+                        continue
+                    if _mapping(finding.get("source")).get("main_text_id") == main_id:
+                        returned_headers.update(_ids(finding.get("returned_entity_ids", []))
+                                                & headers_by_main.get(main_id, set()))
+            if returned_headers:
+                require(checkability == "checkable" and physical in {"unresolved", "partially_resolved"},
+                        f"{label}: возврат заголовка требует фактически неустранённой цели")
             for handle in source_ids:
                 # A target may have been physically corrected during this same
                 # actualization cycle. Its layer and evidence remain solely the
@@ -374,14 +392,15 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 # freeze the old layer or grant a protocol override for it.
                 if handle in physical_target_ids:
                     continue
-                layer = before.get(handle, {}).get("layer")
+                layer = ACTIVE if handle in returned_headers else before.get(handle, {}).get("layer")
                 if handle in expected and expected[handle] != layer:
                     errors.append(f"{label}: общей графике {handle} назначены противоречивые слои")
                 if layer:
                     expected[handle] = layer
             # Appending different coloured spans to an existing MText is valid.
             for handle in response_ids | consultant_ids:
-                layer = before.get(handle, before.get(main_id, {})).get("layer")
+                layer = (ACTIVE if handle in returned_headers or (handle in consultant_ids and main_id in returned_headers)
+                         else before.get(handle, before.get(main_id, {})).get("layer"))
                 require(bool(layer), f"{label}: не подтверждён исходный слой текста без перехода")
                 if layer:
                     if handle in expected and expected[handle] != layer:
@@ -389,6 +408,10 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                     expected[handle] = layer
                     layer_overrides[handle] = layer
                     item_overrides[handle] = layer
+            for handle in returned_headers:
+                layer_overrides[handle] = item_overrides[handle] = ACTIVE
+            owned.update(returned_headers)
+            item_owned.update(returned_headers)
         owned.update(response_ids | consultant_ids)
         item_owned.update(response_ids | consultant_ids)
 
