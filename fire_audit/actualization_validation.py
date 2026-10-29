@@ -8,6 +8,7 @@ from typing import Any
 from .protocol_validation import protocol_validation_state, authorized_comment_correction
 from .source_text_revisions import authorized_source_text_revisions
 from .instruction_contracts import approved_rule_text_errors, cycle_marker_state
+from .graphic_operations import graphic_operation_state
 
 
 RESOLVED_LAYER = "экспертиза устранено"
@@ -74,16 +75,20 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 errors.append("Не подтверждён полный индивидуальный охват новых планов и повторная проверка")
 
     verified = {item.get("handle"): item for item in registry.get("verified_graphics", [])}
+    operations = graphic_operation_state(registry)
+    errors.extend(operations["errors"])
+    neutral = operations["neutral"]
+    comments = operations["comments"]
     before = {item.get("handle"): item for item in registry.get("graphics_before", [])}
     changed = set(registry.get("changed_entity_ids", []))
     created = set(registry.get("created_entity_ids", []))
     expected_green: set[str] = set()
     expected_returned: set[str] = set()
-    expected_active: set[str] = set()
+    expected_active: set[str] = set(operations["active"])
     expected_explanations: set[str] = set()
     expected_blue: dict[str, str] = {}
     expected_preserved: dict[str, str] = {}
-    owned_changes: set[str] = protocol_all_owned & (changed | created)
+    owned_changes: set[str] = (protocol_all_owned & (changed | created)) | operations["owned"]
     added_keys: set[tuple[str, ...]] = set()
     for finding in findings:
         number = finding.get("original_number", "?")
@@ -233,8 +238,10 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 proof = target.get("evidence", {})
                 dedup = target.get("deduplication", {})
                 key = tuple(str(dedup.get(k, "")).strip().casefold() for k in ("floor", "project_target", "parameter", "requirement"))
-                if (not ray or (not blue_group and not target.get("graphic_ids")) or not target_ids <= created
-                        or target.get("status") != "unresolved" or target.get("returned_entity_ids")
+                conditional = (source.get("main_text_id"), ray) in operations["conditional"]
+                corrected = (source.get("main_text_id"), ray) in operations["corrected"]
+                if (not ray or (not blue_group and not target.get("graphic_ids")) or not target_ids <= created | operations["reused"]
+                        or (target.get("status") != "unresolved" and not conditional and not corrected) or target.get("returned_entity_ids")
                         or any(not proof.get(k) for k in ("project_entity_ids", "method", "result", "normative_basis"))):
                     errors.append(f"{label}: новая цель не подтверждена обмером, нормой или новой графикой")
                 if (not all(key) or key in added_keys or dedup.get("same_target_already_covered") is not False
@@ -245,7 +252,7 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                     errors.append(f"{label}: новая цель и группа должны относиться к одному этажу")
                 if blue_group:
                     expected_blue.update({handle: source_layer for handle in target_ids if handle not in protocol_layers})
-                else:
+                elif not corrected:
                     active_additions.update(target_ids)
             if strict and not target.get("reason"):
                 errors.append(f"{label}: у цели отсутствует конкретное основание")
@@ -281,23 +288,23 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                 corrected_blue = {handle for handle in target_ids & changed
                                   if blue_group and verified.get(handle, {}).get("layer") == source_layer
                                   and before.get(handle, {}).get("layer") in RESOLVED_SOURCE_LAYERS}
-                if ((target_ids & changed) - target_returned) - corrected_blue - protocol_owned:
+                if ((target_ids & changed) - target_returned) - corrected_blue - protocol_owned - neutral:
                     errors.append(f"{label}: изменена графика неподтверждённой цели")
         finding_changes = set(finding.get("changed_entity_ids", []))
         finding_created = set(finding.get("created_entity_ids", []))
         owned_changes.update(finding_changes | finding_created)
         expected_active.update(active_additions - protocol_owned)
-        expected_explanations.update(explanation_ids - protocol_owned)
+        expected_explanations.update(explanation_ids - protocol_owned - comments)
         expected_green.update((finding_changes | finding_created) - returned - reopened - active_additions - explanation_ids
-                              - set(expected_blue) - protocol_owned - set(expected_preserved))
+                              - set(expected_blue) - protocol_owned - set(expected_preserved) - neutral - comments - operations["active"])
         expected_returned.update(returned)
-        if not reopened <= finding_changes or not active_additions <= finding_created or not explanation_ids <= finding_changes | finding_created:
+        if not reopened <= finding_changes or not active_additions <= finding_created | (operations["reused"] & finding_changes) or not explanation_ids <= finding_changes | finding_created:
             errors.append(f"{label}: дополнения не совпадают с журналом группы")
         if not returned <= finding_changes & returnable:
             errors.append(f"{label}: возвращённые объекты не относятся к изменённой графике группы")
         if status == "resolved" and not blue_group:
             expected_green.update(group_ids - set(protocol_layers))
-        elif not blue_group and (group_ids & changed) - returned - reopened - protocol_owned:
+        elif not blue_group and (group_ids & changed) - returned - reopened - protocol_owned - neutral:
             errors.append(f"{label}: незакрытая группа целиком переведена в устранённые")
         elif (not blue_group and strict and status != "resolved" and not any_inapplicable
               and not (source_layer in RESOLVED_SOURCE_LAYERS and not group_ids & changed)
@@ -314,7 +321,8 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
     for handles, layer in ((expected_active, ACTIVE_LAYER), (expected_explanations, "экспертиза пояснения")):
         for handle in handles:
             entity = verified.get(handle, {})
-            if (entity.get("layer") != layer or entity.get("colorIndex") != (2 if handle in markers else 256)
+            expected_color = 2 if handle in markers else 3 if handle in operations["new_main"] and layer == ACTIVE_LAYER else 256
+            if (entity.get("layer") != layer or entity.get("colorIndex") != expected_color
                     or entity.get("linetype") != "ByLayer" or entity.get("lineWeight") != "ByLayer"):
                 errors.append(f"{handle}: не подтверждён слой дополнения {layer} и ByLayer")
     for handle in expected_returned:
