@@ -510,16 +510,26 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             require(all(before.get(h, {}).get("layer") == PROTOCOL_RESOLVED for h in source_ids),
                     f"{label}: документарный перенос допустим только из «экспертиза устранено протокол»")
         elif kind == "stu_carry_forward":
-            prior_date = _date(evidence.get("previous_notice_date"))
-            require(bool(evidence.get("previous_notice_reference")) and prior_date is not None
-                    and comment_date is not None and prior_date <= comment_date
-                    and evidence.get("previous_notice_sent") is True
-                    and evidence.get("no_new_reply_about_requirement") is True
-                    and evidence.get("requirement_unchanged") is True and response_status == "missing",
-                    f"{label}: перенос СТУ не подтверждён прежним уведомлением и отсутствием нового ответа")
+            no_new_reply = (response_status == "missing"
+                            and evidence.get("no_new_reply_about_requirement") is True)
+            resolved_on_plan = (checkability == "checkable" and physical == "resolved"
+                                and not physical_has_violation)
+            require(no_new_reply or resolved_on_plan,
+                    f"{label}: перенос СТУ требует отсутствия нового ответа либо подтверждённого устранения на планах")
             require(all(before.get(h, {}).get("layer") == STU_PROTOCOL for h in source_ids),
                     f"{label}: повторный перенос СТУ допустим только из «экспертиза СТУ протокол»")
-        if kind in {"documentary_carry_forward", "stu_carry_forward"}:
+            color = (protocol.get("planned_stu_layer_color") if planned_only else
+                     _mapping(registry.get("graphics_layer_check")).get("stu_layer_color"))
+            require(color == 5,
+                    f"{label}: для слоя «экспертиза СТУ» требуется подтверждённый синий цвет ACI 5")
+            current_review = evidence.get("current_review_reference")
+            if not current_review and evidence.get("new_materials_received") is True:
+                current_review = evidence.get("new_materials_reference")
+            require(evidence.get("subsequent_cycle") is True
+                    and bool(evidence.get("previous_protocol_reference")) and bool(current_review)
+                    and evidence.get("previous_protocol_reference") != current_review,
+                    f"{label}: перенос СТУ требует отдельного текущего цикла после предыдущего протокола")
+        if kind == "documentary_carry_forward":
             require(evidence.get("subsequent_cycle") is True and evidence.get("new_materials_received") is True
                     and bool(evidence.get("previous_protocol_reference")) and bool(evidence.get("new_materials_reference"))
                     and evidence.get("previous_protocol_reference") != evidence.get("new_materials_reference"),

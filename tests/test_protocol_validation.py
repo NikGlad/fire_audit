@@ -214,6 +214,8 @@ class ProtocolValidationTests(unittest.TestCase):
         item = deepcopy(protocol_registry["protocol"]["items"][0])
         registry.update({key: deepcopy(protocol_registry[key]) for key in (
             "protocol", "graphics_before", "verified_graphics", "changed_entity_ids", "created_entity_ids")})
+        if "stu_layer_color" in protocol_registry.get("graphics_layer_check", {}):
+            registry["graphics_layer_check"]["stu_layer_color"] = protocol_registry["graphics_layer_check"]["stu_layer_color"]
         finding = registry["findings"][0]
         physical = item["plan"]["physical_status"]
         finding["status"] = "insufficient_data" if physical == "not_rechecked" else physical
@@ -413,6 +415,7 @@ class ProtocolValidationTests(unittest.TestCase):
 
     def stu_fixture(self):
         registry = self.missing_fixture("stu_carry_forward", STU_PROTOCOL, STU)
+        registry["graphics_layer_check"]["stu_layer_color"] = 5
         item = registry["protocol"]["items"][0]
         item["transition"]["evidence"] = {"previous_notice_reference": "Отправленное письмо предыдущего цикла",
                                           "previous_notice_date": "2026-10-22", "previous_notice_sent": True,
@@ -422,17 +425,60 @@ class ProtocolValidationTests(unittest.TestCase):
                                           "new_materials_reference": "Новое поступление планов и ответов"}
         return registry
 
-    def test_stu_transfer_requires_prior_sent_notice_and_absence_of_new_reply(self):
+    def test_stu_transfer_without_new_reply_does_not_require_prior_letter(self):
         registry = self.stu_fixture()
+        evidence = registry["protocol"]["items"][0]["transition"]["evidence"]
+        for field in ("previous_notice_reference", "previous_notice_date", "previous_notice_sent"):
+            evidence.pop(field)
         self.assertValid(registry)
         self.assertValid(self.actualization_fixture(registry))
-        for field in ("previous_notice_reference", "previous_notice_sent", "no_new_reply_about_requirement"):
-            with self.subTest(field=field):
-                broken = deepcopy(registry)
-                broken["protocol"]["items"][0]["transition"]["evidence"].pop(field)
-                self.assertInvalid(broken)
+        broken = deepcopy(registry)
+        broken["protocol"]["items"][0]["transition"]["evidence"].pop("no_new_reply_about_requirement")
+        self.assertInvalid(broken)
         registry["protocol"]["items"][0]["response"]["status"] = "received"
         self.assertInvalid(registry)
+
+    def test_stu_transfer_on_verified_plan_correction_even_with_new_reply(self):
+        registry = self.fixture("stu_carry_forward")
+        item = registry["protocol"]["items"][0]
+        item["response"].update(kind="completed_correction", claims_fixed=True)
+        item["plan"].update(physical_status="resolved")
+        item["plan"]["evidence"]["result"] = "Исправление всех целей подтверждено обмером"
+        item["transition"]["evidence"] = {
+            "previous_protocol_reference": "Предыдущий протокол",
+            "current_review_reference": "Текущая проверка", "subsequent_cycle": True,
+        }
+        registry["graphics_layer_check"]["stu_layer_color"] = 5
+        for e in registry["graphics_before"]: e["layer"] = STU_PROTOCOL
+        for e in registry["verified_graphics"]: e["layer"] = STU
+        self.assertValid(registry)
+        self.assertValid(self.actualization_fixture(registry))
+        for status in ("partially_resolved", "unresolved", "insufficient_data"):
+            broken = deepcopy(registry)
+            broken["protocol"]["items"][0]["plan"]["physical_status"] = status
+            with self.subTest(status=status): self.assertInvalid(broken)
+        broken = deepcopy(registry)
+        broken["protocol"]["items"][0]["plan"]["evidence"] = {}
+        self.assertInvalid(broken)
+
+    def test_stu_transfer_requires_whole_group_blue_layer_and_distinct_review(self):
+        registry = self.stu_fixture()
+        evidence = registry["protocol"]["items"][0]["transition"]["evidence"]
+        evidence.pop("new_materials_received")
+        evidence.pop("new_materials_reference")
+        evidence["current_review_reference"] = "Повторная проверка без новых ответов"
+        self.assertValid(registry)
+        self.assertValid(self.actualization_fixture(registry))
+        for defect in ("color", "dimension", "partial_group", "same_cycle"):
+            broken = deepcopy(registry)
+            i = broken["protocol"]["items"][0]
+            if defect == "color": broken["graphics_layer_check"]["stu_layer_color"] = 3
+            if defect == "dimension":
+                next(e for e in broken["verified_graphics"] if e["handle"] == "D")["layer"] = STU_PROTOCOL
+            if defect == "partial_group": i["transition"]["entity_ids"].remove("R")
+            if defect == "same_cycle":
+                i["transition"]["evidence"]["current_review_reference"] = evidence["previous_protocol_reference"]
+            with self.subTest(defect=defect): self.assertInvalid(broken)
 
     def test_blue_group_cannot_be_recolored_by_ordinary_commitment(self):
         registry = self.fixture()
@@ -690,6 +736,23 @@ class ProtocolValidationTests(unittest.TestCase):
             self.assertEqual(registry["changed_entity_ids"], [])
             self.assertEqual(registry["created_entity_ids"], [])
             registry["protocol"]["items"][0]["transition"]["evidence"]["covers_all_requirements"] = False
+            self.assertFalse(validate_protocol_analysis_registry(registry, True)["ok"])
+
+    def test_word_stu_transfer_requires_planned_blue_layer_without_cad_claim(self):
+        for mode in ("protocol", "actualization_protocol"):
+            registry = self.word_fixture(mode)
+            item = registry["protocol"]["items"][0]
+            item["response"] = {"status": "missing", "entity_ids": []}
+            item["consultant"].update(decision="no_answer", text="Нового ответа нет")
+            item["transition"].update(kind="stu_carry_forward", evidence={
+                "subsequent_cycle": True, "previous_protocol_reference": "Предыдущий протокол",
+                "current_review_reference": "Текущая проверка", "no_new_reply_about_requirement": True,
+            })
+            for e in registry["graphics_before"]: e["layer"] = STU_PROTOCOL
+            registry["protocol"]["planned_stu_layer_color"] = 5
+            result = validate_protocol_analysis_registry(registry, True)
+            self.assertTrue(result["ok"], result["errors"])
+            registry["protocol"].pop("planned_stu_layer_color")
             self.assertFalse(validate_protocol_analysis_registry(registry, True)["ok"])
 
     def test_word_protocol_requires_planned_not_fictitious_completed_transition(self):
