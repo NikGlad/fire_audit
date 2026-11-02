@@ -106,6 +106,8 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
         source_layer = (source.get("original_layer") or before.get(source.get("main_text_id"), {}).get("layer")
                         or verified.get(source.get("main_text_id"), {}).get("layer"))
         blue_group = source_layer in BLUE_STU_LAYERS
+        if blue_group and status in {"resolved", "partially_resolved"} and not protocol_layers:
+            errors.append(f"{label}: исправленные места СТУ требуют поцелевого перехода stu_plan_review")
         if blue_group:
             for handle in group_ids | set(source.get("ray_ids", [])) | set(source.get("related_graphic_ids", [])):
                 if handle and handle not in protocol_layers:

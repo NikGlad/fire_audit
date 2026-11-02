@@ -225,6 +225,9 @@ class ProtocolValidationTests(unittest.TestCase):
         finding["created_entity_ids"] = list(registry["created_entity_ids"])
         finding["source"]["original_layer"] = registry["graphics_before"][0]["layer"]
         finding["source"]["related_graphic_ids"] = ["D", "E"]
+        if item["transition"]["kind"] == "stu_plan_review":
+            finding["targets"] = deepcopy(item["plan"]["targets"])
+            finding["source"]["ray_ids"] = [t["ray_id"] for t in finding["targets"]]
         if physical == "not_rechecked":
             registry["protocol"]["items"][0]["plan"]["physical_status"] = "insufficient_data"
         return registry
@@ -438,7 +441,7 @@ class ProtocolValidationTests(unittest.TestCase):
         registry["protocol"]["items"][0]["response"]["status"] = "received"
         self.assertInvalid(registry)
 
-    def test_stu_transfer_on_verified_plan_correction_even_with_new_reply(self):
+    def test_whole_blue_stu_transfer_no_longer_accepts_corrected_plan(self):
         registry = self.fixture("stu_carry_forward")
         item = registry["protocol"]["items"][0]
         item["response"].update(kind="completed_correction", claims_fixed=True)
@@ -451,8 +454,8 @@ class ProtocolValidationTests(unittest.TestCase):
         registry["graphics_layer_check"]["stu_layer_color"] = 5
         for e in registry["graphics_before"]: e["layer"] = STU_PROTOCOL
         for e in registry["verified_graphics"]: e["layer"] = STU
-        self.assertValid(registry)
-        self.assertValid(self.actualization_fixture(registry))
+        self.assertInvalid(registry)
+        self.assertInvalid(self.actualization_fixture(registry))
         for status in ("partially_resolved", "unresolved", "insufficient_data"):
             broken = deepcopy(registry)
             broken["protocol"]["items"][0]["plan"]["physical_status"] = status
@@ -460,6 +463,67 @@ class ProtocolValidationTests(unittest.TestCase):
         broken = deepcopy(registry)
         broken["protocol"]["items"][0]["plan"]["evidence"] = {}
         self.assertInvalid(broken)
+
+    def stu_targets_fixture(self, all_fixed=False, shared=False, from_layer=STU_PROTOCOL):
+        r = self.missing_fixture("stu_plan_review", from_layer, STU)
+        i = r["protocol"]["items"][0]
+        i["source"]["entity_ids"].extend(["R2", "D2"])
+        i["source"]["target_graphic_ids"] = ["R", "D", "R2", "D2"]
+        i["transition"]["entity_ids"].extend(["R2", "D2"])
+        r["changed_entity_ids"].extend(["R2", "D2"])
+        i["plan"].update(all_targets_reviewed=True,
+                         physical_status="resolved" if all_fixed else "partially_resolved", targets=[
+            {"ray_id": "R", "graphic_ids": ["D"], "status": "resolved", "reason": "Проверено",
+             "evidence": {"project_entity_ids": ["W"], "method": "обмер", "result": "соответствует"}},
+            {"ray_id": "R2", "graphic_ids": ["D2"] + (["D"] if shared else []),
+             "status": "resolved" if all_fixed else "unresolved", "reason": "Проверено",
+             "evidence": {"project_entity_ids": ["W2"], "method": "обмер", "result": "проверка второго места"}},
+        ])
+        r["graphics_layer_check"].update(stu_layer_color=5, resolved_layer_color=3)
+        for collection, layer in ((r["graphics_before"], from_layer), (r["verified_graphics"], STU)):
+            collection.extend({"handle": h, "layer": layer, "colorIndex": 256,
+                               "linetype": "ByLayer", "lineWeight": "ByLayer"} for h in ["R2", "D2"])
+        for e in r["verified_graphics"]:
+            if all_fixed or e["handle"] == "R" or (e["handle"] == "D" and not shared):
+                e["layer"] = RESOLVED
+        return r
+
+    def test_stu_partial_and_full_resolution_in_both_modes_and_source_layers(self):
+        for layer in (STU, STU_PROTOCOL):
+            for all_fixed in (False, True):
+                for shared in (False, True):
+                    r = self.stu_targets_fixture(all_fixed, shared, layer)
+                    with self.subTest(layer=layer, all_fixed=all_fixed, shared=shared):
+                        self.assertValid(r)
+                        self.assertValid(self.actualization_fixture(r))
+
+    def test_stu_targets_reject_incomplete_proof_and_wrong_split(self):
+        for defect in ("proof", "omitted", "scope", "all_reviewed", "header_green", "fixed_blue", "remaining_green", "color"):
+            r = self.stu_targets_fixture()
+            i = r["protocol"]["items"][0]
+            if defect == "proof": i["plan"]["targets"][0]["evidence"] = {}
+            if defect == "omitted": i["plan"]["targets"].pop()
+            if defect == "scope": i["source"]["target_graphic_ids"].remove("D2")
+            if defect == "all_reviewed": i["plan"].pop("all_targets_reviewed")
+            if defect in {"header_green", "fixed_blue", "remaining_green"}:
+                handle = {"header_green": "T", "fixed_blue": "D", "remaining_green": "R2"}[defect]
+                next(e for e in r["verified_graphics"] if e["handle"] == handle)["layer"] = STU if defect == "fixed_blue" else RESOLVED
+            if defect == "color": r["graphics_layer_check"]["resolved_layer_color"] = 5
+            with self.subTest(defect=defect): self.assertInvalid(r)
+
+    def test_word_stu_target_split_is_planned_without_claiming_cad_edits(self):
+        r = self.stu_targets_fixture()
+        i = r["protocol"]["items"][0]
+        i["consultant"].update(entity_ids=[], word_reference="Раздел СТУ отчёта", planned_inside_original_block=True)
+        i["transition"].update(planned_only=True, entity_ids=list(i["source"]["entity_ids"]))
+        r["protocol"].update(planned_text_colors={"client_response": 4, "consultant_explanation": 30},
+                             planned_stu_layer_color=5, planned_resolved_layer_color=3, text_color_checks=[])
+        r.update(changed_entity_ids=[], created_entity_ids=[], verified_graphics=[],
+                 dwg_actions={"work_completed": False}, word_report={"status": "complete"})
+        result = validate_protocol_analysis_registry(r, True)
+        self.assertTrue(result["ok"], result["errors"])
+        r["protocol"].pop("planned_resolved_layer_color")
+        self.assertFalse(validate_protocol_analysis_registry(r, True)["ok"])
 
     def test_stu_transfer_requires_whole_group_blue_layer_and_distinct_review(self):
         registry = self.stu_fixture()

@@ -29,6 +29,7 @@ TRANSITION_LAYERS = {
     "no_answer": ACTIVE,
     "documentary_carry_forward": RESOLVED,
     "stu_carry_forward": STU,
+    "stu_plan_review": STU,
     "unanswered_explanation": EXPLANATIONS,
 }
 PHYSICAL_STATUSES = {"resolved", "partially_resolved", "unresolved", "insufficient_data", "not_rechecked",
@@ -229,7 +230,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
             # actualization validator and receive no protocol exemption.
             continue
         if scope_v2 and response_status == "missing":
-            require(reply_required is True or kind in {"documentary_carry_forward", "stu_carry_forward"},
+            require(reply_required is True or kind in {"documentary_carry_forward", "stu_carry_forward", "stu_plan_review"},
                     f"{label}: безответный комментарий разрешён только при reply_required=true в текущем цикле")
         require(not response.get("kind") or not evidence.get("response_kind")
                 or response.get("kind") == evidence.get("response_kind"),
@@ -330,6 +331,63 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 if kind == "accepted_response":
                     require(all(s in {"resolved", "not_applicable_after_change"} for s in target_statuses),
                             f"{label}: принятие ответа не может скрыть неустранённую или неподтверждённую цель")
+        stu_layers: dict[str, str] = {}
+        if kind == "stu_plan_review":
+            targets = plan.get("targets", [])
+            valid_targets = (isinstance(targets, list) and bool(targets)
+                             and all(isinstance(t, dict) for t in targets))
+            require(valid_targets and plan.get("all_targets_reviewed") is True,
+                    f"{label}: требуется полный поцелевой состав проверки СТУ")
+            targets = targets if valid_targets else []
+            declared_graphics = _ids(source.get("target_graphic_ids", []))
+            headers = headers_by_main.get(main_id, set())
+            require(bool(declared_graphics) and declared_graphics <= source_ids
+                    and not declared_graphics & (headers | response_ids | consultant_ids),
+                    f"{label}: не выделен полный состав графики целей отдельно от заголовка СТУ")
+            states_by_graphic: dict[str, list[str]] = {}
+            target_keys = []
+            for target in targets:
+                ray = target.get("ray_id")
+                ids = _ids(target.get("graphic_ids", [])) | ({ray} if isinstance(ray, str) and ray else set())
+                target_keys.append(ray if isinstance(ray, str) else None)
+                status = target.get("status")
+                require(isinstance(ray, str) and bool(ray) and bool(ids) and ids <= declared_graphics
+                        and status in {"resolved", "unresolved", "insufficient_data"},
+                        f"{label}: у цели СТУ отсутствует адресная графика или проверенный статус")
+                proof = _mapping(target.get("evidence"))
+                if status in {"resolved", "unresolved"}:
+                    require(all(proof.get(k) for k in ("project_entity_ids", "method", "result")),
+                            f"{label}: статус цели СТУ не подтверждён проверкой плана")
+                else:
+                    require(bool(target.get("reason")), f"{label}: у неподтверждённой цели СТУ нет причины")
+                for handle in ids:
+                    states_by_graphic.setdefault(handle, []).append(status)
+            require(len(target_keys) == len(set(target_keys)) and set(states_by_graphic) == declared_graphics,
+                    f"{label}: пропущена или повторена цель/графика СТУ")
+            states = [t.get("status") for t in targets]
+            all_resolved = bool(states) and all(s == "resolved" for s in states)
+            inferred = ("resolved" if all_resolved else "partially_resolved" if "resolved" in states
+                        else "unresolved" if "unresolved" in states else "insufficient_data")
+            require(checkability == "checkable" and physical == inferred,
+                    f"{label}: итог СТУ не соответствует результатам всех мест")
+            require(before.get(main_id, {}).get("layer") in {STU, STU_PROTOCOL},
+                    f"{label}: поцелевой переход применяется к ранее синей группе СТУ")
+            stu_layers = {h: RESOLVED if all_resolved else STU for h in all_ids}
+            for handle, statuses in states_by_graphic.items():
+                stu_layers[handle] = RESOLVED if all(s == "resolved" for s in statuses) else STU
+            for layer, field in ((STU, "stu_layer_color"), (RESOLVED, "resolved_layer_color")):
+                if layer in stu_layers.values():
+                    color = (protocol.get("planned_" + field) if planned_only else
+                             _mapping(registry.get("graphics_layer_check")).get(field))
+                    require(color == (5 if layer == STU else 3), f"{label}: не подтверждён цвет слоя {layer}")
+            if registry.get("mode") == "actualization_protocol":
+                matching = [f for f in registry.get("findings", []) if isinstance(f, dict)
+                            and _mapping(f.get("source")).get("main_text_id") == main_id]
+                def target_signature(rows):
+                    return Counter((str(t.get("ray_id")), str(t.get("status")), tuple(sorted(_ids(t.get("graphic_ids", [])))))
+                                   for t in rows if isinstance(t, dict))
+                require(len(matching) == 1 and target_signature(targets) == target_signature(matching[0].get("targets", [])),
+                        f"{label}: цели СТУ не совпадают с фактической проверкой актуализации")
         if kind not in {*TRANSITION_LAYERS, "none"}:
             errors.append(f"{label}: неизвестное протокольное действие")
         elif kind != "none":
@@ -350,7 +408,7 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                 require(journal_required <= changed | created,
                         f"{label}: переход всей группы не совпадает с журналом изменений")
             for handle in transition_ids:
-                layer = TRANSITION_LAYERS[kind]
+                layer = stu_layers.get(handle, TRANSITION_LAYERS[kind])
                 if handle in expected and expected[handle] != layer:
                     errors.append(f"{label}: объекту {handle} назначены противоречивые слои")
                 expected[handle] = layer
@@ -512,10 +570,8 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
         elif kind == "stu_carry_forward":
             no_new_reply = (response_status == "missing"
                             and evidence.get("no_new_reply_about_requirement") is True)
-            resolved_on_plan = (checkability == "checkable" and physical == "resolved"
-                                and not physical_has_violation)
-            require(no_new_reply or resolved_on_plan,
-                    f"{label}: перенос СТУ требует отсутствия нового ответа либо подтверждённого устранения на планах")
+            require(no_new_reply and physical not in {"resolved", "partially_resolved"},
+                    f"{label}: перенос всей группы СТУ допустим без нового ответа и без исправленных целей; исправления требуют поцелевого перехода")
             require(all(before.get(h, {}).get("layer") == STU_PROTOCOL for h in source_ids),
                     f"{label}: повторный перенос СТУ допустим только из «экспертиза СТУ протокол»")
             color = (protocol.get("planned_stu_layer_color") if planned_only else
@@ -535,14 +591,16 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                     and evidence.get("previous_protocol_reference") != evidence.get("new_materials_reference"),
                     f"{label}: повторный перенос требует подтверждённого нового поступления после предыдущего протокола")
         if response_status == "missing" and kind not in {"no_answer", "unanswered_explanation",
-                                                           "documentary_carry_forward", "stu_carry_forward"}:
+                                                           "documentary_carry_forward", "stu_carry_forward", "stu_plan_review"}:
             require(kind == "none" and before.get(main_id, {}).get("layer") in {STU, STU_PROTOCOL}
                     and decision == "no_answer"
                     and "замечание осталось без внимания" in str(consultant.get("text", "")).casefold(),
                     f"{label}: отсутствие ответа не обработано установленным правилом или специальным повторным циклом")
         if before.get(main_id, {}).get("layer") in {STU, STU_PROTOCOL}:
-            require(kind in {"none", "stu_carry_forward"},
+            require(kind in {"none", "stu_carry_forward", "stu_plan_review"},
                     f"{label}: синяя группа СТУ не должна переноситься по обычному правилу устранения")
+            if physical in {"resolved", "partially_resolved"}:
+                require(kind == "stu_plan_review", f"{label}: исправленные места СТУ требуют поцелевого перехода в устранённые")
         if response_status == "missing" and before.get(main_id, {}).get("layer") == CLIENT_EXPLANATIONS:
             require(kind == "unanswered_explanation",
                     f"{label}: безответное пояснение для заказчика должно перейти в «экспертиза пояснения»")

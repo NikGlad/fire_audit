@@ -44,7 +44,7 @@ class ActualizationValidationTests(unittest.TestCase):
         self.assertTrue(result["ok"], result["errors"])
         self.assertTrue(any("повторяющиеся исходные номера" in item for item in result["warnings"]))
 
-    def test_stu_group_keeps_blue_layer_when_resolved(self):
+    def test_resolved_stu_group_cannot_keep_blue_without_target_transition(self):
         for layer in ("экспертиза СТУ", "экспертиза СТУ протокол"):
             with self.subTest(layer=layer):
                 registry = self.fixture()
@@ -61,7 +61,7 @@ class ActualizationValidationTests(unittest.TestCase):
                 registry["verified_graphics"][-1]["lineWeight"] = "LineWeight050"
                 registry["graphics_before"][-1]["lineWeight"] = "LineWeight050"
                 result = validate_registry(registry, True)
-                self.assertTrue(result["ok"], result["errors"])
+                self.assertFalse(result["ok"], result)
                 registry["verified_graphics"][0]["layer"] = "экспертиза устранено"
                 self.assertFalse(validate_registry(registry, True)["ok"])
 
