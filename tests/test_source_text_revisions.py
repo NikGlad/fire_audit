@@ -20,6 +20,41 @@ class SourceTextRevisionTests(unittest.TestCase):
     def test_precise_numeric_update(self):
         self.assertTrue(authorized_source_text_revisions(self.fixture()))
 
+    def semantic_fixture(self):
+        r = self.fixture(); item = r['targeted_source_text_revisions'][0]
+        explanation = ('01.01.2025 пояснение пожарного консультанта: '
+                       'Замечание изменено в связи с изменением назначения помещения.')
+        item.update(revision_kind='changed_inputs', norms_reread=True,
+                    normative_edition='Редакция на установленную дату проверки',
+                    changed_inputs=[{'parameter': 'Назначение', 'before': 'Прежнее',
+                                     'after': 'Новое', 'source': 'Ответ заказчика'}],
+                    consultant_explanation=explanation, consultant_appendix='\\P' + explanation,
+                    replacements=[{'from': 'Предусмотреть 6 м.', 'to': 'Предусмотреть отделение помещения.'}])
+        item['after'] = item['before'].replace('Предусмотреть 6 м.', 'Предусмотреть отделение помещения.') + item['consultant_appendix']
+        r['verified_graphics'][0]['contents'] = item['after']
+        return r
+
+    def test_semantic_requirement_with_dated_reason(self):
+        self.assertTrue(authorized_source_text_revisions(self.semantic_fixture()))
+
+    def test_semantic_changes_require_inputs_norms_and_explanation(self):
+        for field in ('changed_inputs', 'norms_reread', 'normative_edition', 'consultant_explanation', 'consultant_appendix'):
+            r = self.semantic_fixture(); r['targeted_source_text_revisions'][0][field] = None
+            with self.subTest(field=field): self.assertFalse(authorized_source_text_revisions(r))
+
+    def test_variants_require_explicit_review_and_history_remains_protected(self):
+        r = self.semantic_fixture(); item = r['targeted_source_text_revisions'][0]
+        item['replacements'].append({'from': '1. Выполнить.', 'to': '1. Предусмотреть новое отделение.'})
+        item['after'] = item['after'].replace('1. Выполнить.', '1. Предусмотреть новое отделение.')
+        r['verified_graphics'][0]['contents'] = item['after']
+        self.assertFalse(authorized_source_text_revisions(r))
+        item['variants_reviewed'] = True
+        self.assertTrue(authorized_source_text_revisions(r))
+        item['replacements'].append({'from': 'принято.', 'to': 'не принято.'})
+        item['after'] = item['after'].replace('принято.', 'не принято.')
+        r['verified_graphics'][0]['contents'] = item['after']
+        self.assertFalse(authorized_source_text_revisions(r))
+
     def test_evidence_is_required(self):
         for field in ['user_authorized', 'fresh_read_verified', 'history_preserved', 'normative_basis', 'reason']:
             r = self.fixture(); r['targeted_source_text_revisions'][0][field] = False

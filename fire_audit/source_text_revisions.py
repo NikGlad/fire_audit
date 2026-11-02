@@ -1,8 +1,25 @@
-"""Evidence-based exception for targeted numeric updates after new client inputs."""
+"""Evidence-based exceptions for requirement updates after changed inputs."""
 from __future__ import annotations
 
 import re
 from typing import Any
+
+
+def _changed_input_evidence(record: dict[str, Any]) -> bool:
+    inputs = record.get('changed_inputs')
+    if (record.get('norms_reread') is not True or not record.get('normative_edition')
+            or not isinstance(inputs, list) or not inputs):
+        return False
+    for item in inputs:
+        if (not isinstance(item, dict) or not item.get('parameter') or not item.get('source')
+                or 'before' not in item or 'after' not in item or item['before'] == item['after']):
+            return False
+    explanation = record.get('consultant_explanation')
+    appendix = record.get('consultant_appendix')
+    return (isinstance(explanation, str) and isinstance(appendix, str)
+            and bool(re.match(r'\d{2}\.\d{2}\.\d{4} пояснение пожарного консультанта: '
+                              r'Замечание изменено в связи с .+', explanation))
+            and explanation in appendix)
 
 
 def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
@@ -41,6 +58,12 @@ def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
                 or h not in registry.get('changed_entity_ids', [])):
             return False
         text = r['before']
+        kind = r.get('revision_kind', 'numeric')
+        if kind not in ('numeric', 'changed_inputs'):
+            return False
+        semantic = kind == 'changed_inputs'
+        if semantic and not _changed_input_evidence(r):
+            return False
         replacements = r.get('replacements')
         if not isinstance(replacements, list) or not replacements:
             return False
@@ -49,14 +72,24 @@ def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
                 return False
             old, new = change.get('from'), change.get('to')
             if (not isinstance(old, str) or not isinstance(new, str) or not old or old == new
-                    or not re.search(r'\d', old) or not re.search(r'\d', new)
-                    or '\\' in old or '\\' in new or text.count(old) != 1):
+                    or text.count(old) != 1):
                 return False
-            protected = [text.lower().find(marker) for marker in ('вариант', 'ответ заказчика', 'пояснени')]
+            if not semantic and (not re.search(r'\d', old) or not re.search(r'\d', new)
+                                 or '\\' in old or '\\' in new):
+                return False
+            markers = ['ответ заказчика', 'пояснени']
+            if not semantic or r.get('variants_reviewed') is not True:
+                markers.insert(0, 'вариант')
+            protected = [text.lower().find(marker) for marker in markers]
+            # Protect the date and formatting before an author's historical entry too.
+            protected.extend(m.start() for m in re.finditer(
+                r'\d{2}\.\d{2}\.\d{2}(?:\d{2})?\s+(?:ответ заказчика|пояснени)', text.lower()))
             boundary = min([p for p in protected if p >= 0], default=len(text))
             if text.index(old) + len(old) > boundary:
-                return False  # original solutions and conversation history are immutable
+                return False  # dated conversation history is immutable
             text = text.replace(old, new, 1)
+        if semantic:
+            text += r['consultant_appendix']
         if text != r['after']:
             return False
         validated.add(h)
