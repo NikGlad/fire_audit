@@ -586,10 +586,13 @@ def protocol_validation_state(registry: dict[str, Any], *, strict: bool,
                     and evidence.get("previous_protocol_reference") != current_review,
                     f"{label}: перенос СТУ требует отдельного текущего цикла после предыдущего протокола")
         if kind == "documentary_carry_forward":
-            require(evidence.get("subsequent_cycle") is True and evidence.get("new_materials_received") is True
-                    and bool(evidence.get("previous_protocol_reference")) and bool(evidence.get("new_materials_reference"))
-                    and evidence.get("previous_protocol_reference") != evidence.get("new_materials_reference"),
-                    f"{label}: повторный перенос требует подтверждённого нового поступления после предыдущего протокола")
+            current_review = evidence.get("current_review_reference")
+            if not current_review and evidence.get("new_materials_received") is True:
+                current_review = evidence.get("new_materials_reference")
+            require(evidence.get("subsequent_cycle") is True
+                    and bool(evidence.get("previous_protocol_reference")) and bool(current_review)
+                    and evidence.get("previous_protocol_reference") != current_review,
+                    f"{label}: документарный перенос требует отдельного текущего цикла после предыдущего протокола; новые материалы не обязательны")
         if response_status == "missing" and kind not in {"no_answer", "unanswered_explanation",
                                                            "documentary_carry_forward", "stu_carry_forward", "stu_plan_review"}:
             require(kind == "none" and before.get(main_id, {}).get("layer") in {STU, STU_PROTOCOL}

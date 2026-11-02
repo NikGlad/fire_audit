@@ -399,6 +399,24 @@ class ProtocolValidationTests(unittest.TestCase):
         registry["protocol"]["items"][0]["plan"]["physical_status"] = "resolved"
         self.assertInvalid(registry)
 
+    def test_documentary_transfer_without_new_materials_requires_distinct_cycle(self):
+        registry = self.documentary_fixture()
+        evidence = registry["protocol"]["items"][0]["transition"]["evidence"]
+        evidence.pop("new_materials_received")
+        evidence.pop("new_materials_reference")
+        evidence["current_review_reference"] = "Следующая итерация без новых материалов"
+        self.assertValid(registry)
+        self.assertValid(self.actualization_fixture(registry))
+        for defect in ("same_cycle", "no_current", "no_previous", "not_subsequent", "conflict"):
+            broken = deepcopy(registry)
+            e = broken["protocol"]["items"][0]["transition"]["evidence"]
+            if defect == "same_cycle": e["current_review_reference"] = e["previous_protocol_reference"]
+            if defect == "no_current": e.pop("current_review_reference")
+            if defect == "no_previous": e.pop("previous_protocol_reference")
+            if defect == "not_subsequent": e["subsequent_cycle"] = False
+            if defect == "conflict": e["no_conflicting_information"] = False
+            with self.subTest(defect=defect): self.assertInvalid(broken)
+
     def test_documentary_transfer_requires_previous_acceptance_and_correct_source_layer(self):
         for mutation in ("reference", "future_date", "conflict", "checkable", "layer"):
             with self.subTest(mutation=mutation):
