@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import queue
+import re
 import shutil
 import threading
 import time
@@ -22,6 +23,25 @@ from fire_audit.barrier_ui import AdditionalDataPanel
 
 
 ROOT = Path(__file__).resolve().parent
+
+
+def gpzu_date_to_storage(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if not re.fullmatch(r"[0-9]{2}\.[0-9]{2}\.[0-9]{4}", value):
+        raise ValueError("Введите дату ГПЗУ в формате ДД.ММ.ГГГГ, например 06.08.2024.")
+    try:
+        return datetime.strptime(value, "%d.%m.%Y").date().isoformat()
+    except ValueError as exc:
+        raise ValueError("Дата ГПЗУ недействительна. Проверьте день, месяц и год.") from exc
+
+
+def gpzu_date_to_ui(value: str) -> str:
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        year, month, day = value.split("-")
+        return f"{day}.{month}.{year}"
+    return value
 
 
 def number_to_ui(value: object) -> str:
@@ -115,7 +135,7 @@ class FireAuditGUI(tk.Tk):
         row = 0
         row = self._entry(form, row, "name", "Название объекта")
         row = self._entry(form, row, "dwg", "Расположение файла DWG", browse=True)
-        row = self._entry(form, row, "gpzu", "Дата ГПЗУ (ГГГГ-ММ-ДД)")
+        row = self._entry(form, row, "gpzu", "Дата ГПЗУ (ДД.ММ.ГГГГ)")
         row = self._entry(form, row, "classes", "Функциональные классы через запятую")
         row = self._entry(form, row, "fire_degree", "Степень огнестойкости")
         row = self._entry(form, row, "constructive_class", "Класс конструктивной пожарной опасности")
@@ -727,7 +747,7 @@ class FireAuditGUI(tk.Tk):
         c = p.get("classification", {})
         self.fields["name"].set(p.get("name", ""))
         self.fields["dwg"].set(p.get("dwg", {}).get("path", ""))
-        self.fields["gpzu"].set(p.get("dates", {}).get("gpzu", ""))
+        self.fields["gpzu"].set(gpzu_date_to_ui(p.get("dates", {}).get("gpzu") or ""))
         self.fields["classes"].set(", ".join(c.get("functional_classes", [])))
         self.fields["fire_degree"].set(c.get("fire_resistance_degree", ""))
         self.fields["constructive_class"].set(c.get("constructive_fire_hazard_class", ""))
@@ -777,7 +797,7 @@ class FireAuditGUI(tk.Tk):
         p.setdefault("dwg", {})["path"] = self.fields["dwg"].get().strip()
         p["dwg"]["save_allowed"] = False
         p["dwg"]["delete_allowed"] = False
-        p.setdefault("dates", {})["gpzu"] = self.fields["gpzu"].get().strip()
+        p.setdefault("dates", {})["gpzu"] = gpzu_date_to_storage(self.fields["gpzu"].get())
         c = p.setdefault("classification", {})
         c["functional_classes"] = [value.strip() for value in self.fields["classes"].get().split(",") if value.strip()]
         c["fire_resistance_degree"] = self.fields["fire_degree"].get().strip()
@@ -842,6 +862,7 @@ class FireAuditGUI(tk.Tk):
                         parent=self,
                     )
                     return
+                gpzu_date_to_storage(self.fields["gpzu"].get())
                 self.current_project = self.app.projects.create(name)
                 self.current_slug = self.current_project["slug"]
                 created_new = True
@@ -870,8 +891,12 @@ class FireAuditGUI(tk.Tk):
     def validate_project(self) -> None:
         if not self.current_slug:
             return
-        project = self._update_project_from_form()
-        errors, warnings = self.app.projects.validate(project, require_ready=True)
+        try:
+            project = self._update_project_from_form()
+            errors, warnings = self.app.projects.validate(project, require_ready=True)
+        except ValueError as exc:
+            messagebox.showerror("Проверка паспорта", str(exc), parent=self)
+            return
         lines = ["Ошибки:"] + [f"• {value}" for value in errors] + ["", "Предупреждения:"] + [f"• {value}" for value in warnings]
         if not errors and not warnings:
             lines = ["Паспорт готов к созданию задания."]
