@@ -252,23 +252,56 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertIn("ч.3 фз 123", article89)
         self.assertIn("для каких этажей", article89)
 
-    def test_full_document_search_regulation_is_in_every_mode(self) -> None:
+    def test_full_document_search_regulation_follows_mode_readiness(self) -> None:
         from fire_audit.knowledge import MODE_FILES
+        from fire_audit.knowledge_modules import PENDING_MODES
+
+        document = "14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md"
         for mode in MODE_FILES:
-            context = self.app.knowledge.context_for_mode(mode)
-            self.assertEqual(context.count("===== 14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md ====="), 1)
-            self.assertIn("read_norm_document", context)
-            self.assertIn("find_vniipo_letters", context)
+            with self.subTest(mode=mode):
+                snapshot = self.app.knowledge.snapshot_for_mode(mode)
+                self.assertEqual(snapshot.instructions_pending, mode in PENDING_MODES)
+                # Pending modes retain the source but must not start a normative audit.
+                self.assertIn(document, {doc.name for doc in snapshot.documents})
+                context = snapshot.context
+                if mode in PENDING_MODES:
+                    manifest = json.loads(snapshot.module_manifest_json)
+                    module = next(row for row in manifest if row["id"] == "source." + document[:-3])
+                    self.assertEqual(module["status"], "deferred")
+                    self.assertEqual(module["included_rule_ids"], [])
+                    self.assertTrue(module["excluded_rules"])
+                    self.assertTrue(all("до утверждения алгоритма" in row["reason"]
+                                        for row in module["excluded_rules"]))
+                    self.assertNotIn(f"===== {document} =====", context)
+                    self.assertIn("Проверку и изменения AutoCAD не выполнять", context)
+                else:
+                    self.assertEqual(context.count(f"===== {document} ====="), 1)
+                    self.assertIn("read_norm_document", context)
+                    self.assertIn("find_vniipo_letters", context)
 
     def test_article89_sanitary_exclusion_is_shared_but_not_a_general_exemption(self) -> None:
         from fire_audit.knowledge import MODE_FILES
+        from fire_audit.knowledge_modules import PENDING_MODES
+
         for mode in MODE_FILES:
             with self.subTest(mode=mode):
-                context = self.app.knowledge.context_for_mode(mode)
-                self.assertIn("душевые, ванные, туалеты и санузлы не проверять по статье 89", context)
-                self.assertIn("не проверялось по указанию пользователя", context)
-                self.assertIn("не отменяет проверок по другим применимым требованиям", context)
-                self.assertIn("не исключать автоматически преддушевые", context)
+                snapshot = self.app.knowledge.snapshot_for_mode(mode)
+                self.assertEqual(snapshot.instructions_pending, mode in PENDING_MODES)
+                context = snapshot.context
+                if mode in PENDING_MODES:
+                    manifest = json.loads(snapshot.module_manifest_json)
+                    excluded = {row["id"]: row["reason"] for module in manifest
+                                for row in module["excluded_rules"]}
+                    for rule_id in ("doc_25_091", "doc_25_092"):
+                        self.assertIn(rule_id, excluded)
+                        self.assertIn("до утверждения алгоритма", excluded[rule_id])
+                    self.assertNotIn("душевые, ванные, туалеты и санузлы не проверять по статье 89", context)
+                    self.assertIn("Проверку и изменения AutoCAD не выполнять", context)
+                else:
+                    self.assertIn("душевые, ванные, туалеты и санузлы не проверять по статье 89", context)
+                    self.assertIn("не проверялось по указанию пользователя", context)
+                    self.assertIn("не отменяет проверок по другим применимым требованиям", context)
+                    self.assertIn("не исключать автоматически преддушевые", context)
         self.create_ready_project()
         for mode in ("article89", "compliance", "actualization_protocol"):
             with self.subTest(run_mode=mode):
@@ -448,7 +481,10 @@ class FireAuditTestCase(unittest.TestCase):
         for mode_context in (context, actualization_context):
             self.assertIn("только ответы заказчика без изменения планов", mode_context)
             self.assertIn("пояснение пожарного консультанта", mode_context)
-            self.assertIn("вносить в обе инструкции", mode_context)
+            # Both workflows expand one canonical block, not two editable copies.
+            self.assertEqual(mode_context.count("поддерживать в единственном исходном блоке protocol_shared_001"), 1)
+            self.assertIn("не хранить две вручную редактируемые копии", mode_context)
+            self.assertIn("одностороннее уточнение впоследствии автоматически не распространять", mode_context)
             for rule in ("замечание осталось без внимания", "экспертиза лифты для пожарных",
                          "Даты и размещение ответов", "Последующие протоколы и актуализации",
                          "text_color_checks", "плана тушения пожара"):
