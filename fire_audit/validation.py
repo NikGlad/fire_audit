@@ -750,7 +750,11 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
         "post_checked",
     }
     non_issue = output.get("non_issue_explanation", {})
-    non_issue_required = status in NON_ISSUED_REVIEWED
+    # An explicitly issued stage query/requirement is a drawing deliverable even
+    # when the design facts remain insufficient. Non-issued findings keep the
+    # prohibition on rays and target graphics.
+    explicit_stage_output = finding.get("mode") == "stage" and output.get("stage_is_issued") is True
+    non_issue_required = status in NON_ISSUED_REVIEWED and not explicit_stage_output
     non_issue_planned = bool(str(non_issue.get("text", "")).strip()) and non_issue.get("green") is True
     # A reviewed non-issue needs evidence in the registry, not a drawing note.
     non_issue_note_present = bool(str(non_issue.get("text", "")).strip() or non_issue.get("entity_id"))
