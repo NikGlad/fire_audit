@@ -780,7 +780,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.assertEqual(complete["errors"], [])
         application = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(application["ok"])
-        self.assertEqual(application["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(application["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
     def test_result_dwg_can_reuse_prior_runs_pinned_copy_after_save_as(self) -> None:
         project = self.create_ready_project()
@@ -947,7 +947,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.set_complete_individual_analysis(finding)
         self.app.runs.add_finding("test", run_id, finding)
         without_note = self.app.runs.validate("test", run_id, for_application=True)
-        self.assertEqual(without_note["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(without_note["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
         finding["output"]["non_issue_explanation"].update(
             {
@@ -963,7 +963,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, finding)
         ready = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(ready["ok"])
-        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
     def test_stage_right_issued_element_requires_ray_and_confirmed_target(self) -> None:
         self.create_ready_project()
@@ -1208,7 +1208,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, finding)
         ready = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(ready["ok"])
-        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
         finding["autocad"]["placement"]["explanation_side"] = "top"
         self.app.runs.add_finding("test", run_id, finding)
@@ -1227,7 +1227,7 @@ class FireAuditTestCase(unittest.TestCase):
             self.app.runs.add_finding("test", run_id, finding)
             correctly_placed = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(correctly_placed["ok"])
-        self.assertEqual(correctly_placed["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(correctly_placed["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
         finding["autocad"]["placement"]["side"] = "left"
         finding["autocad"]["placement"]["explanation_side"] = "left"
 
@@ -1243,7 +1243,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, finding)
         no_explanation = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(no_explanation["ok"])
-        self.assertEqual(no_explanation["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(no_explanation["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
         finding["autocad"]["source_group"]["left_explanation_checked"] = False
         self.app.runs.add_finding("test", run_id, finding)
@@ -1302,7 +1302,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, findings[1])
         ready = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(ready["ok"])
-        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
     def test_insufficient_data_requires_four_part_request(self) -> None:
         self.create_ready_project()
@@ -1344,7 +1344,7 @@ class FireAuditTestCase(unittest.TestCase):
         self.app.runs.add_finding("test", run_id, finding)
         ready = self.app.runs.validate("test", run_id, for_application=True)
         self.assertFalse(ready["ok"])
-        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний"])
+        self.assertEqual(ready["errors"], ["Не зарегистрирован полный перечень исходных замечаний", "История не сверена: выполните get_run_history и reconcile_run_history перед завершением"])
 
     def test_mgn_absence_cannot_justify_unrelated_requirement(self) -> None:
         self.create_ready_project()

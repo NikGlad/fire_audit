@@ -27,6 +27,17 @@ class ChatHandoffTests(unittest.TestCase):
     def create_run(self, mode='barrier_assessment', task_variant='full_execution'):
         return self.app.runs.create('other', mode, task_variant)
 
+    def reconcile_history(self, run_id):
+        self.app.runs.validate('other', run_id)
+        journal = self.app.runs.get_run_history('other', run_id)
+        self.app.runs.reconcile_run_history('other', run_id, {
+            'conversation_through': 'Конец синтетического тестового задания',
+            'reviewed_event_ids': journal['review_event_ids'], 'unrecorded_events': [],
+            'dispositions': [], 'source_inventory': [
+                {'kind': kind, 'reference': 'Синтетические данные теста; внешних источников нет'}
+                for kind in ('conversation', 'documents', 'plans', 'previous_checks')],
+        })
+
     def test_full_barrier_task_can_be_passed_to_a_new_chat(self):
         result = self.create_run()
         run = result['run']
@@ -183,7 +194,10 @@ class ChatHandoffTests(unittest.TestCase):
                 self.assertIn('record_word_report', task)
                 if not source_selection:
                     self.assertNotIn('зарегистрируй копию через `record_result_dwg`', task)
-                self.assertIn('===== 24_ДВА_ВИДА_ЗАДАНИЯ.md =====', task)
+                if run['hard_constraints']['workflow_instructions_ready']:
+                    self.assertIn('===== 24_ДВА_ВИДА_ЗАДАНИЯ.md =====', task)
+                else:
+                    self.assertIn('Режим пока не активирован', task)
 
     def test_ar_and_actualization_word_register_marked_copy_without_touching_source(self):
         source = self.root / 'source.dwg'
@@ -234,6 +248,7 @@ class ChatHandoffTests(unittest.TestCase):
         self.app.runs.record_quality_control('other', run_id, {
             'checks': checks, 'created_or_changed_entity_ids': [], 'unresolved': [],
         })
+        self.reconcile_history(run_id)
         complete = self.app.runs.validate('other', run_id, for_application=True)
         self.assertTrue(complete['ok'], complete['errors'])
         with self.assertRaisesRegex(ValueError, 'итоговый DWG не создаётся'):
@@ -275,6 +290,7 @@ class ChatHandoffTests(unittest.TestCase):
             'checks': {name: True for name in WORD_QUALITY_CHECKS},
             'created_or_changed_entity_ids': [], 'unresolved': [],
         })
+        self.reconcile_history(run['run_id'])
         self.assertTrue(self.app.runs.validate('other', run['run_id'], for_application=True)['ok'])
         with self.assertRaisesRegex(ValueError, 'итоговый DWG не создаётся'):
             self.app.runs.record_result_dwg(

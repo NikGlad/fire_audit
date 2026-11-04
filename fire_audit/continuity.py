@@ -8,6 +8,7 @@ from typing import Any
 
 from .io_utils import read_json, utc_now, write_json
 from .barrier_remarks_service import stored_errors as source_remarks_errors
+from .history_journal import reference as journal_reference
 
 
 HISTORY_NAME = "ИСТОРИЯ_ОЦЕНОК.json"
@@ -129,6 +130,7 @@ def project_history(project_dir: Path) -> dict[str, Any]:
             entry["work_iteration"] = number
     # Newest first within each work kind; the flat list remains for legacy readers.
     return {"schema_version": 2, "project_slug": project_dir.name, "runs": entries,
+            "event_journal": journal_reference(project_dir),
             "by_work_kind": by_work_kind}
 
 

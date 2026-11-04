@@ -32,7 +32,12 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 def write_json(path: Path, value: Any) -> None:
+    from .history_journal import document_location, observe_write
+    tracked = document_location(path) is not None
+    before = read_json(path) if tracked else None
     atomic_write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+    if tracked:
+        observe_write(path, before, value)
 
 
 def slugify(value: str) -> str:

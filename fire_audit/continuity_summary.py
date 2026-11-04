@@ -50,6 +50,7 @@ def build_continuity_summary(history: dict[str, Any], kind: str, *, archive_path
         "nearest_iteration": copy.deepcopy(own_history[0]) if own_history else None,
         "full_archive": {"path": archive_path, "run_count": len(history.get("runs", [])),
                          "digest": summary_digest(history), "complete": True},
+        "event_journal": copy.deepcopy(history.get('event_journal', {})),
         "state_candidates": values,
         "question_candidate_keys": [row["key"] for row in values if row["record"].get("kind") == "question"],
         "impact_review": {"required": bool(history.get("runs")), "status": "not_recorded",

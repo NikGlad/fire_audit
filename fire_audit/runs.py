@@ -23,6 +23,7 @@ from .continuity import (CONTEXT_KINDS, HISTORY_NAME, PLAN_CHANGE_STATUSES, PRIO
                          work_kind, write_project_history)
 from .continuity_summary import SUMMARY_NAME, build_continuity_summary, eligible_rule_text_sources
 from .knowledge_modules import POLICY_VERSION as MODULE_POLICY_VERSION
+from . import history_journal
 
 
 MODE_LABELS = {
@@ -271,6 +272,7 @@ class RunStore:
         word_report_name = OBJECT_NORMS_REPORT if object_norms else "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
         run = {
             "schema_version": 1,
+            "history_policy_version": 1,
             "run_id": run_id,
             "project_slug": slug,
             "mode": mode,
@@ -758,6 +760,8 @@ class RunStore:
             "не повторяй уже выполненные изменения. Факты и решения других объектов не переносить.\n\n"
             f"{workflow}\n\n---\n\nПолный текст сохранённого задания:\n\n{task}"
         )
+        if history_journal.HISTORY_INSTRUCTION not in text:
+            text = history_journal.HISTORY_INSTRUCTION + "\n\n" + text
         return {"text": text, "warnings": warnings, "rules_current": rules_current,
                 "project_current": project_current, "rules_intact": rules_intact,
                 "task_file": str(task_file), "rules_file": str(rules_file), "mode": run["mode"],
@@ -882,6 +886,27 @@ class RunStore:
         write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
         write_project_history(self.projects.project_dir(slug))
         return {"run_id": run_id, "count": len(record["items"]), "history_file": str(self.projects.project_dir(slug) / HISTORY_NAME)}
+
+    def get_run_history(self, slug: str, run_id: str, after_seq: int = 0, limit: int = 100) -> dict[str, Any]:
+        self.load(slug, run_id)
+        if not isinstance(after_seq, int) or after_seq < 0 or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError('after_seq >= 0; limit от 1 до 500')
+        data = history_journal.history(self.projects.project_dir(slug), run_id)
+        all_events = data['events']
+        pending = [e for e in all_events if e['seq'] > after_seq]
+        data.update(events=pending[:limit], has_more=len(pending) > limit,
+                    next_after_seq=pending[min(limit, len(pending)) - 1]['seq'] if pending else after_seq,
+                    total_events=len(all_events),
+                    review_event_ids=[e['event_id'] for e in all_events if e['kind'] != 'reconciliation'])
+        return data
+
+    def record_history_event(self, slug: str, run_id: str, event: dict[str, Any]) -> dict[str, Any]:
+        self.load(slug, run_id)
+        return history_journal.record_event(self.projects.project_dir(slug), run_id, event)
+
+    def reconcile_run_history(self, slug: str, run_id: str, review: dict[str, Any]) -> dict[str, Any]:
+        self.load(slug, run_id)
+        return history_journal.reconcile(self.projects.project_dir(slug), run_id, review)
 
     def capture_barrier_source_remarks(self, slug: str, run_id: str) -> dict[str, Any]:
         return barrier_remarks_service.capture(self, slug, run_id)
@@ -1186,6 +1211,15 @@ class RunStore:
         layer_check["checked_at"] = utc_now()
         loaded["registry"]["graphics_layer_check"] = layer_check
         write_json(Path(loaded["folder"]) / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
+        if for_application:
+            if (loaded['run'].get('history_policy_version') == 1
+                    or history_journal.enabled(self.projects.project_dir(slug), run_id)):
+                result['errors'].extend(history_journal.completion_errors(self.projects.project_dir(slug), run_id))
+            else:
+                result.setdefault('warnings', []).append(
+                    'Исторический запуск создан до обязательной сверки журнала; полнота переписки не подтверждена. '
+                    'При продолжении выполните get_run_history, record_history_event и reconcile_run_history.')
+            result['ok'] = not result['errors']
         result.update({"run_id": run_id, "for_application": for_application})
         return result
 
@@ -1563,6 +1597,8 @@ class RunStore:
 - Статус свода: `{run.get('continuity_summary', {}).get('verification_status', 'использовать прежний снимок и адресные источники')}`; кандидатов: {run.get('continuity_summary', {}).get('candidate_count', 0)}. Автоматическая сборка не подтверждает актуальность прежних выводов.
 
 Основная цепочка строго последовательна внутри одного вида работы: итерация 3 опирается на 2, итерация 4 — на 3 и так далее. Не пропускай непосредственно предыдущую итерацию, даже если она не завершена; при этом явно проверь её статус и доказательства. Начни с её реестра и контролируемого свода состояния со ссылками на источники. Автоматический свод имеет статус `verification_required`, пока его факты, источники и возможность повторного использования не проверены и не зафиксированы в текущем реестре через `record_continuity`. Прежние выводы не копируй автоматически. Глубокое чтение ранних запусков выполняй адресно: по затронутым фактам, зависимостям, противоречиям и нерешённым вопросам; всю растущую цепочку без такого основания повторно читать не требуется. Если свод или источник недоступен либо неполон, восстанови относящуюся цепочку доказательств из полного архива и зафиксируй ограничение. Запуски других видов работ используй отдельно и только как вторичный источник для анализа влияния общих изменений: они не заменяют предыдущую итерацию и не определяют статус планов этого вида. Если состояние планов `unconfirmed`, спроси заказчика, новые ли планы относительно указанного запуска; не объявляй геометрию неизменной по совпадению пути или времени файла. Если есть изменения, сопоставь их с прежними замечаниями и решениями по всем затронутым видам работ; составь матрицу влияния. Если планы те же, проверь новые ответы, паспорт, нормы и нерешённые вопросы. Зафиксируй архитектурные факты, решения, изменения и их влияние через `record_continuity` с источниками. Старые реестры и результаты не перезаписывай. Полный архив и матрица влияния обязательны; свод их не заменяет.
+
+{history_journal.HISTORY_INSTRUCTION}
 
 Автоматически найденные различия полей паспорта (это подсказка для анализа, а не вывод по DWG; служебные даты не сравниваются):
 

@@ -11,8 +11,9 @@ HEADING = "### Принятие исходных данных из ответо�
 class ProtocolCustomerInputsTests(unittest.TestCase):
     def test_shared_rule_is_identical(self):
         sections = []
+        app = FireAuditApp(ROOT)
         for name in ("11_АКТУАЛИЗАЦИЯ.md", "16_ПРОТОКОЛ.md"):
-            text = (ROOT / "knowledge" / name).read_text(encoding="utf-8-sig")
+            text = app.knowledge.resolved_document(name)
             self.assertEqual(text.count(HEADING), 1)
             sections.append(text.split(HEADING, 1)[1].split("### Новые сведения и обозначения", 1)[0])
         self.assertEqual(*sections)

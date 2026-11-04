@@ -10,6 +10,7 @@ from typing import Any, Callable
 from fire_audit.core import FireAuditApp
 from fire_audit.barrier_inputs import inputs_for
 from fire_audit.io_utils import read_json
+from fire_audit.history_journal import HISTORY_INSTRUCTION, EVENT_KINDS, SOURCE_KINDS
 
 
 SERVER_INSTRUCTIONS = (
@@ -43,6 +44,9 @@ SERVER_INSTRUCTIONS = (
     "Этапизация, Оценка соответствия АР, Часть 3 статьи 89, Актуализация + протокол, Перенос оценки АР, Подготовка планов АР, "
     "Сравнение планов АР, Протокол, Оценка Преград и Оценка ДУ."
 )
+
+
+SERVER_INSTRUCTIONS += "\n" + HISTORY_INSTRUCTION
 
 
 def tool(
@@ -366,6 +370,56 @@ TOOLS = [
             "required": ["slug", "run_id", "items"],
         },
         read_only=False,
+    ),
+    tool(
+        "get_run_history",
+        "Синхронизировать версии текущих файлов и прочитать журнал объекта для запуска. Читать все страницы до has_more=false; review_event_ids содержит полный перечень для сверки.",
+        {"type": "object", "properties": {
+            "slug": {"type": "string"}, "run_id": {"type": "string"},
+            "after_seq": {"type": "integer", "minimum": 0, "default": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}},
+         "required": ["slug", "run_id"]}, read_only=False,
+    ),
+    tool(
+        "record_history_event",
+        "Немедленно сохранить ответ, документ, изменение плана, вопрос или решение в неизменяемом журнале объекта. Повтор с тем же id и содержанием безопасен; уточнение — новым событием supersedes.",
+        {"type": "object", "properties": {
+            "slug": {"type": "string"}, "run_id": {"type": "string"},
+            "event": {"type": "object", "properties": {
+                "id": {"type": "string"}, "kind": {"type": "string", "enum": list(EVENT_KINDS)},
+                "event_date": {"type": "string", "description": "Дата события YYYY-MM-DD; дата записи сохраняется отдельно"},
+                "source": {"type": "string", "description": "Сообщение/документ/лист и точный адрес источника"},
+                "source_path": {"type": "string", "description": "Полный путь локального источника; SHA-256 фиксируется в момент записи события"},
+                "text": {"type": "string", "description": "Исходный ответ или формулировка решения без подмены интерпретацией"},
+                "interpretation": {"type": "string"}, "supersedes": {"type": "string"},
+                "related_finding_ids": {"type": "array", "items": {"type": "string"}},
+                "affected_modes": {"type": "array", "items": {"type": "string"}},
+                "location": {"type": "string"}, "norm": {"type": "string"},
+                "plan_reference": {"type": "string"}},
+                "required": ["id", "kind", "event_date", "source", "text"]}},
+         "required": ["slug", "run_id", "event"]}, read_only=False,
+    ),
+    tool(
+        "reconcile_run_history",
+        "Зафиксировать итоговую сверку диалога, файлов, планов и прежних проверок с журналом. Не заменяет нормативную проверку; новые события или изменённые файлы отменяют актуальность сверки.",
+        {"type": "object", "properties": {
+            "slug": {"type": "string"}, "run_id": {"type": "string"},
+            "review": {"type": "object", "properties": {
+                "conversation_through": {"type": "string", "description": "Последнее сверенное сообщение: ссылка/id или дата и точная цитата"},
+                "reviewed_event_ids": {"type": "array", "items": {"type": "string"}},
+                "unrecorded_events": {"type": "array", "items": {"type": "string"}, "description": "Перед завершением должен быть пустым; сначала зарегистрируйте пропуски"},
+                "source_inventory": {"type": "array", "items": {"type": "object", "properties": {
+                    "kind": {"type": "string", "enum": list(SOURCE_KINDS)},
+                    "reference": {"type": "string", "description": "Точный источник и предел охвата, либо основание отсутствия источников этого вида"},
+                    "path": {"type": "string", "description": "Для каждого локального файла полный путь: приложение сохранит и проверит SHA-256"}},
+                    "required": ["kind", "reference"]}},
+                "dispositions": {"type": "array", "items": {"type": "object", "properties": {
+                    "event_id": {"type": "string"},
+                    "status": {"type": "string", "enum": ["applied", "no_impact", "unresolved", "superseded"]},
+                    "reason": {"type": "string"}, "evidence": {"type": "string"}},
+                    "required": ["event_id", "status", "reason", "evidence"]}}},
+                "required": ["conversation_through", "reviewed_event_ids", "unrecorded_events", "source_inventory", "dispositions"]}},
+         "required": ["slug", "run_id", "review"]}, read_only=False,
     ),
     tool(
         "record_quality_control",
@@ -722,6 +776,12 @@ class MCPServer:
             return app.runs.add_finding(args["slug"], args["run_id"], args["finding"])
         if name == "record_continuity":
             return app.runs.record_continuity(args["slug"], args["run_id"], args["items"])
+        if name == "get_run_history":
+            return app.runs.get_run_history(args["slug"], args["run_id"], args.get("after_seq", 0), args.get("limit", 100))
+        if name == "record_history_event":
+            return app.runs.record_history_event(args["slug"], args["run_id"], args["event"])
+        if name == "reconcile_run_history":
+            return app.runs.reconcile_run_history(args["slug"], args["run_id"], args["review"])
         if name == "record_quality_control":
             return app.runs.record_quality_control(args["slug"], args["run_id"], args["quality"])
         if name == "validate_run":
