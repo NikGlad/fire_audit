@@ -13,7 +13,11 @@ class ErrorControlRulesTests(unittest.TestCase):
         for mode in MODE_FILES:
             snapshot = self.knowledge.snapshot_for_mode(mode)
             self.assertIn('30_КОНТРОЛЬ_ОШИБОК_И_ПРОПУСКОВ.md', [d.name for d in snapshot.documents])
-            self.assertIn('КО-11. Фасады', snapshot.context)
+            # Pending algorithms intentionally expose preparation/core only.
+            if 'Алгоритм не утверждён' in snapshot.context:
+                self.assertNotIn('КО-11. Фасады', snapshot.context)
+            else:
+                self.assertIn('КО-11. Фасады', snapshot.context)
 
     def test_request_numbering_conflict_removed(self):
         for name in ('03_ОЦЕНКА_СООТВЕТСТВИЯ.md', '08_САМОПРОВЕРКА.md'):
