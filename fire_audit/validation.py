@@ -309,8 +309,29 @@ def _validate_stairwell_facade_opening_clearance(
     return errors
 
 
+def _mandatory_material_requirement(finding: dict[str, Any]) -> bool:
+    """The explicit material-policy exception is not a finding of a physical defect."""
+    output = finding.get("output", {})
+    basis = output.get("mandatory_requirement", {})
+    return (
+        finding.get("mode") == "compliance"
+        and finding.get("decision", {}).get("status") == "insufficient_data"
+        and finding.get("applicability", {}).get("status") == "applicable"
+        and output.get("issued") is True
+        and output.get("is_general_requirement") is True
+        and isinstance(basis, dict)
+        and basis.get("rule_id") in {"doc_03_056", "doc_25_079", "doc_25_080"}
+        and basis.get("scope") == "material_or_fire_resistance"
+        and basis.get("applicability_verified") is True
+        and basis.get("unknown_characteristic_not_asserted_as_defect") is True
+        and bool(str(basis.get("reason", "")).strip())
+    )
+
+
 def _issued_graphics_required(finding: dict[str, Any]) -> bool:
     status = finding.get("decision", {}).get("status", "not_reviewed")
+    if _mandatory_material_requirement(finding):
+        return True
     if status in NON_ISSUED_REVIEWED:
         return False
     output = finding.get("output", {})
@@ -677,10 +698,11 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
         "left_explanation_copied_when_present",
         "text_styles_preserved",
         "relative_positions_preserved",
-        "repeated_floor_group_copied_from_actualized_group",
     ):
         if source_group.get(key) is not True:
             errors.append(f"{prefix}: признак {key} должен быть true")
+    if copy_case == "repeated_floor" and source_group.get("repeated_floor_group_copied_from_actualized_group") is not True:
+        errors.append(f"{prefix}: признак repeated_floor_group_copied_from_actualized_group должен быть true")
 
     text_ids = {
         str(value)
@@ -722,7 +744,7 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
             errors.append(f"{prefix}: не все созданные элементы группы записаны как копии")
         if left_present and not any(
             isinstance(item, dict) and item.get("role") == "purple_explanation"
-            for item in autocad.get("created_objects", [])
+            for item in (_result_graphics_rows(autocad) or [])
         ):
             errors.append(f"{prefix}: найденное пояснение слева отсутствует в размещённой группе")
     return errors
@@ -740,7 +762,8 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
     autocad = finding.get("autocad", {})
 
     status = decision.get("status", "not_reviewed")
-    if for_application and status in {"violation", "compliant", "not_applicable"}:
+    mandatory_material_output = _mandatory_material_requirement(finding)
+    if for_application and (status in {"violation", "compliant", "not_applicable"} or mandatory_material_output):
         errors.extend(validate_source_reading(finding))
     is_general = bool(output.get("is_general_requirement"))
     target_graphics = bool(autocad.get("target_entity_ids"))
@@ -754,7 +777,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
     # when the design facts remain insufficient. Non-issued findings keep the
     # prohibition on rays and target graphics.
     explicit_stage_output = finding.get("mode") == "stage" and output.get("stage_is_issued") is True
-    non_issue_required = status in NON_ISSUED_REVIEWED and not explicit_stage_output
+    non_issue_required = status in NON_ISSUED_REVIEWED and not (explicit_stage_output or mandatory_material_output)
     non_issue_planned = bool(str(non_issue.get("text", "")).strip()) and non_issue.get("green") is True
     # A reviewed non-issue needs evidence in the registry, not a drawing note.
     non_issue_note_present = bool(str(non_issue.get("text", "")).strip() or non_issue.get("entity_id"))
@@ -1145,7 +1168,7 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
         status = finding.get("decision", {}).get("status")
         output = finding.get("output", {})
         is_general = bool(output.get("is_general_requirement"))
-        issued_output = status == "violation" or (is_general and status not in NON_ISSUED_REVIEWED)
+        issued_output = status == "violation" or (is_general and status not in NON_ISSUED_REVIEWED) or _mandatory_material_requirement(finding)
         if for_application and issued_output:
             autocad = finding.get("autocad", {})
             floor = str(autocad.get("floor", "")).strip()
