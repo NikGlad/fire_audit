@@ -1,4 +1,5 @@
 import copy
+import json
 import shutil
 import tempfile
 import unittest
@@ -129,14 +130,43 @@ class BarrierRulesTests(unittest.TestCase):
             for folder in ('config', 'knowledge', 'templates'):
                 shutil.copytree(source / folder, root / folder)
             app = FireAuditApp(root)
+            pending_modes = {
+                'ar_assessment_transfer', 'ar_plan_preparation', 'ar_plan_comparison', 'du_assessment',
+            }
+            catalogue = json.loads((root / 'knowledge/rule_blocks.json').read_text(encoding='utf-8'))
+            cover_rules = {rule['id']: rule for rule in catalogue['rules']
+                           if rule['id'] in {'doc_27_008', 'doc_27_011'}}
+            self.assertEqual(set(cover_rules), {'doc_27_008', 'doc_27_011'})
             for mode in MODE_LABELS:
-                self.assertIn('14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md', app.knowledge.context_for_mode(mode))
-                self.assertIn('20_КЛАССИФИКАЦИЯ_ЧАСТЕЙ_ЗДАНИЯ.md', app.knowledge.context_for_mode(mode))
-                self.assertIn('Ф4.3', app.knowledge.context_for_mode(mode))
-                self.assertIn('27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md', app.knowledge.context_for_mode(mode))
-                self.assertIn('Покрытия помещений, расположенных в объёме другого помещения', app.knowledge.context_for_mode(mode))
-                self.assertIn('Правила о перекрытиях не изменяются.', app.knowledge.context_for_mode(mode))
-                self.assertIn('Покрытие малого помещения внутри большого объёма всегда обозначать выноской, независимо от таблицы 21 № 123-ФЗ.', app.knowledge.context_for_mode(mode))
+                with self.subTest(mode=mode):
+                    snapshot = app.knowledge.snapshot_for_mode(mode)
+                    context = snapshot.context
+                    manifest = json.loads(snapshot.module_manifest_json)
+                    included = {key for module in manifest for key in module['included_rule_ids']}
+                    excluded = {row['id']: row['reason'] for module in manifest
+                                for row in module['excluded_rules']}
+                    self.assertEqual(snapshot.instructions_pending, mode in pending_modes)
+                    self.assertIn('14_РЕГЛАМЕНТ_ПОИСКА_ДОКУМЕНТОВ.md', context)
+                    self.assertIn('20_КЛАССИФИКАЦИЯ_ЧАСТЕЙ_ЗДАНИЯ.md', context)
+                    self.assertIn('Ф4.3', context)
+                    self.assertIn('27_НЕЗАВИСИМЫЕ_ТРЕБОВАНИЯ_ДВЕРИ_ПЕРЕКРЫТИЯ.md', context)
+                    for key, rule in cover_rules.items():
+                        self.assertIn(mode, rule['modes'])
+                        if mode in pending_modes:
+                            self.assertIn(key, excluded)
+                            self.assertIn('до утверждения алгоритма', excluded[key])
+                            self.assertNotIn(key, included)
+                            self.assertNotIn(rule['text'], context)
+                        else:
+                            self.assertIn(key, included)
+                            self.assertIn(rule['text'], context)
+                    if mode in pending_modes:
+                        # Deferral preserves the user's approved core and execution gate.
+                        self.assertTrue({'doc_25_025', 'doc_25_027', 'doc_25_030',
+                                         'doc_25_054', 'doc_25_055', 'doc_25_056'}.issubset(included))
+                        self.assertIn('Проверку и изменения AutoCAD не выполнять', context)
+                    else:
+                        self.assertIn('Покрытия помещений, расположенных в объёме другого помещения', context)
             barrier_context = app.knowledge.context_for_mode('barrier_assessment')
             self.assertIn('только противопожарные перегородки 1-го типа EI 45', barrier_context)
             self.assertIn('противопожарные перекрытия 2-го типа REI 60', barrier_context)
@@ -164,7 +194,7 @@ class BarrierRulesTests(unittest.TestCase):
             self.assertIn('Вес линий преград 50', task)
             self.assertIn('===== 23_НОРМАТИВНАЯ_МАТРИЦА_ПП.md =====', task)
             self.assertIn('Таблица 23 № 123-ФЗ', task)
-            self.assertIn('СП 4, п. 6.3.7', task)
+            self.assertIn('По п. 6.3.7 складские помещения категорий В1–В3 производственных зданий', task)
             self.assertIn('экспертиза категории', task)
             self.assertNotIn('===== room_classification.json', task)
             self.assertNotIn('Алгоритм этого вида проверки ещё не передан', task)
