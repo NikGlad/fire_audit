@@ -29,7 +29,8 @@ class AdditionalDataPanel(ttk.Frame):
         ttk.Button(header, text="Проверить данные", command=self.readiness).pack(side="left", padx=3)
         tabs = ttk.Notebook(self); tabs.pack(fill="both", expand=True, pady=8)
         data = ttk.Frame(tabs, padding=8); tabs.add(data, text="Вводные и документы")
-        rooms = ttk.Frame(tabs, padding=8); tabs.add(rooms, text="Помещения и категории")
+        # Keep legacy table bindings for existing passports without exposing an editor.
+        rooms = ttk.Frame(self)
         special = ttk.Frame(tabs, padding=8); tabs.add(special, text="Уточнения")
         self.special_texts = {}
         for key, label in [("lifts_and_hoists", "Лифты, подъёмники, шахты и холлы: наличие, помещения / оси"),
@@ -47,7 +48,7 @@ class AdditionalDataPanel(ttk.Frame):
             ("additional_documents_reviewed", "Дополнительные документы и ответы заказчика проверены"),
             ("preparation_completed", "Подготовка исходных планов завершена"),
             ("source_explanations_reviewed", "Замечания и ответы в слое пояснений прочитаны"),
-            ("room_match_completed", "Помещения таблицы сопоставлены с планами"),
+            ("room_match_completed", "Помещения из документов сопоставлены с планами"),
             ("refrigeration_equipment_rooms_confirmed", "Помещения с холодильным оборудованием уточнены")]:
             self.flags[key] = tk.BooleanVar(value=False)
             ttk.Checkbutton(data, text=label, variable=self.flags[key]).pack(anchor="w", pady=2)
@@ -72,7 +73,8 @@ class AdditionalDataPanel(ttk.Frame):
         pump_widget.grid(row=row, column=1, sticky="ew", padx=8, pady=4)
         gui._enable_widget_clipboard(pump_widget, editable=True)
         files = ttk.Frame(data); files.pack(fill="x")
-        for label, role in [("Добавить СТУ", "stu"), ("Добавить другой документ", "additional")]:
+        for label, role in [("Добавить СТУ", "stu"), ("Добавить категории", "categories"),
+                            ("Добавить другой документ", "additional")]:
             ttk.Button(files, text=label, command=lambda r=role: self.attach(r)).pack(side="left", padx=3)
         ttk.Button(files, text="Убрать выбранный документ", command=self.remove_attachment).pack(side="left", padx=3)
         self.attachments = tk.Listbox(data, height=4); self.attachments.pack(fill="both", expand=True, pady=7)
@@ -88,7 +90,7 @@ class AdditionalDataPanel(ttk.Frame):
         gui._enable_tree_copy(self.table)
         self.table.bind("<Double-1>", lambda e: self.edit_room())
         ttk.Label(rooms, text="С / П в подписи вычисляется по названию. Категорию программа не рассчитывает. Класс части здания задаётся отдельно.", wraplength=940).pack(anchor="w")
-        gui._tab_scroll_targets[self] = self.table
+        gui._tab_scroll_targets[self] = self.attachments
         self.load_project()
 
     def load_project(self):
@@ -109,7 +111,7 @@ class AdditionalDataPanel(ttk.Frame):
         self.values["special_conditions"].set(self.data.get("special_conditions", ""))
         self.refresh_tables()
         self.message.set(
-            f"{project.get('name', self.slug)} — помещения: {len(self.data['rooms'])}. Дополнительные данные используются во всех видах проверок этого объекта; после сохранения создайте новое задание."
+            f"{project.get('name', self.slug)}. Категории прикладывайте документом. Ранее сохранённых помещений: {len(self.data['rooms'])}. После сохранения создайте новое задание."
             if self.slug else "Выберите объект. Данные этой вкладки используются во всех видах проверок выбранного объекта.")
 
     def collect(self):
@@ -177,7 +179,8 @@ class AdditionalDataPanel(ttk.Frame):
             self.table.insert("", "end", iid=str(idx), values=(r["floor"], r["number"], r["name"], r.get("area_m2", ""), r["category"], r.get("host_part_functional_class", ""), r.get("storage_height_m", "")))
         self.attachments.delete(0, "end")
         for f in self.data.get("attachments", []):
-            self.attachments.insert("end", ("СТУ: " if f.get("role")=="stu" else "Документ: ") + Path(f["path"]).name)
+            label = {"stu": "СТУ: ", "categories": "Категории: "}.get(f.get("role"), "Документ: ")
+            self.attachments.insert("end", label + Path(f["path"]).name)
 
     def attach(self, role):
         try:
@@ -189,6 +192,9 @@ class AdditionalDataPanel(ttk.Frame):
         if not self.attachments.curselection():
             return
         item = self.data["attachments"].pop(self.attachments.curselection()[0])
+        if item.get("role") == "categories":
+            self.flags["categories_approved"].set(False)
+            self.flags["room_match_completed"].set(False)
         if item.get("role") == "stu":
             self.data["stu_documents"] = [p for p in self.data["stu_documents"] if p != item["path"]]
             if not self.data["stu_documents"]:
@@ -205,6 +211,9 @@ class AdditionalDataPanel(ttk.Frame):
         item = snapshot_attachment(self.gui.app.paths, self.slug, path, role)
         if not any(a.get("sha256")==item["sha256"] and a.get("role")==role for a in self.data["attachments"]):
             self.data["attachments"].append(item)
+            if role == "categories":
+                self.flags["categories_approved"].set(False)
+                self.flags["room_match_completed"].set(False)
         if role == "stu":
             if item["path"] not in self.data["stu_documents"]:
                 self.data["stu_documents"].append(item["path"])

@@ -98,6 +98,38 @@ def inputs_for(project):
     return result
 
 
+def category_project_for_plan(project, plan):
+    """Resolve reviewed document rows within a run, preserving the saved passport."""
+    data = project.get("barrier_assessment", {})
+    review = plan.get("category_review")
+    explicit_documents = any(a.get("role") == "categories" for a in data.get("attachments", []))
+    if review is None and not explicit_documents and data.get("rooms"):
+        return project
+    if not isinstance(review, dict) or not review.get("rooms"):
+        raise ValueError("Для категорий из документов нужен category_review с проверенными помещениями")
+    rows = prepare_rooms(review["rooms"])
+    sources = {source.get("id"): source for source in plan.get("sources", [])}
+    registered = {str(Path(a["path"]).resolve()): a for a in data.get("attachments", [])
+                  if a.get("path") and a.get("role") in {"categories", "additional"}}
+    normalize = lambda text: " ".join(str(text).upper().split())
+    for row in rows:
+        source = sources.get(row.get("source_id"), {})
+        attachment = registered.get(str(Path(source.get("path", "")).resolve()))
+        if source.get("kind") != "attachment" or not attachment or not attachment.get("sha256"):
+            raise ValueError("Категория помещения должна ссылаться на загруженный документ")
+        if not source.get("quote") or not source.get("interpretation") or source.get("page", 0) < 1:
+            raise ValueError("Для категории нужны страница, цитата и результат сверки с планом")
+        quote = normalize(source["quote"])
+        if any(normalize(row[key]) not in quote for key in ("number", "name", "category")):
+            raise ValueError("Категория, номер и название помещения не подтверждены цитатой документа")
+    result = copy.deepcopy(project)
+    resolved = result.setdefault("barrier_assessment", {})
+    resolved["rooms"] = rows
+    first_source = sources[rows[0]["source_id"]]
+    resolved["category_source"] = copy.deepcopy(registered[str(Path(first_source["path"]).resolve())])
+    return result
+
+
 def additional_inputs_markdown(project):
     data = inputs_for(project)
     return (
@@ -113,7 +145,16 @@ def additional_inputs_markdown(project):
         "не считай отметку подтверждением содержания документов.\n\n"
         f"- Помещений в таблице: {len(data.get('rooms', []))}.\n"
         f"- Дополнительных документов: {len(data.get('attachments', []))}.\n"
-        "- Проверь таблицу помещений, категорий и источник её утверждения; статус и документы СТУ; "
+        "- Категории бери из загруженных документов объекта, включая ранее добавленные как другой документ. "
+        "Открой файлы, установи актуальную редакцию и утверждение, сверь этажи, номера и названия с планами. "
+        "Ранее сохранённые rooms и category_source являются прежними сведениями. При расхождении "
+        "с документом выясни актуальность и основание выбора. При недостатке данных запроси конкретное уточнение.\n"
+        "- Для подготовки ПП по документу включи в ПЛАН_ПП.json category_review с rooms "
+        "(floor, number, name, category, source_id). source_id каждой строки ссылается на "
+        "sources вида attachment с path, page, quote и interpretation. В цитате должны быть "
+        "название, номер помещения и категория. Прочитай документ и проверь соответствие каждой строки. "
+        "Подтверждение утверждения категорий и его источник фиксируются в дополнительных данных.\n"
+        "- Проверь категории и источник их утверждения; статус и документы СТУ; "
         "другие вложения и ответы заказчика; холодильное оборудование и насосные; лифты, подъёмники, "
         "коридоры, перекрытия, заполнения проёмов, хранение и остальные уточнения.\n\n"
         "Полные значения, пути и контрольные суммы вложений приведены ниже в полном снимке объекта. "

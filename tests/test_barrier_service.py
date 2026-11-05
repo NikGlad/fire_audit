@@ -93,6 +93,28 @@ class BarrierServiceTests(unittest.TestCase):
         doc=library().readfile(self.cad.current);doc.modelspace().add_line((1,1),(2,2));doc.saveas(self.cad.current)
         self.assertFalse(self.flow.verify('test',self.run)['ok'])
 
+    def test_document_categories_are_used_through_prepare_build_and_verify(self):
+        document = self.root / "categories.txt"
+        document.write_text("Этаж 1. 101 Склад В3.", encoding="utf-8")
+        attachment = snapshot_attachment(self.app.paths, "test", document, "categories")
+        project = self.app.projects.load("test")
+        project["barrier_assessment"]["attachments"].append(attachment)
+        before = copy.deepcopy(project["barrier_assessment"]["rooms"])
+        self.app.projects.save("test", project)
+        self.run = self.app.runs.create("test", "barrier_assessment")["run"]["run_id"]
+        self.plan["sources"].append({
+            "id": "categories", "kind": "attachment", "path": attachment["path"],
+            "page": 1, "quote": "101 Склад В3.", "interpretation": "Сверено с планом",
+        })
+        self.plan["category_review"] = {"rooms": [
+            {"floor": "1", "number": "101", "name": "Склад", "category": "В3", "source_id": "categories"}]}
+        self.plan["items"][1]["category"] = "В3"
+        self.flow.prepare("test", self.run, self.plan)
+        result = self.flow.build_copy_from_ui("test", self.run)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(self.flow.verify("test", self.run)["ok"])
+        self.assertEqual(self.app.projects.load("test")["barrier_assessment"]["rooms"], before)
+
     def test_changed_input_or_plan_cannot_be_applied(self):
         self.flow.prepare('test',self.run,self.plan)
         self.attachment.write_text('changed',encoding='utf-8')

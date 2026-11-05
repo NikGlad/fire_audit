@@ -52,7 +52,8 @@ def preparation_errors(project: dict[str, Any], profile: dict[str, Any]) -> list
     errors = []
     if data.get("categories_approved") is not True or not data.get("category_approval_source"):
         errors.append("Не подтверждено утверждение категорий помещений и источник подтверждения")
-    if not data.get("category_source", {}).get("sha256"):
+    documents = [a for a in data.get("attachments", []) if a.get("role") in {"categories", "additional"} and a.get("sha256")]
+    if not data.get("category_source", {}).get("sha256") and not documents:
         errors.append("Не зафиксирована утверждаемая версия таблицы категорий")
     if data.get("stu_status") not in {"absent", "provided"}:
         errors.append("Не установлено наличие СТУ")
@@ -68,8 +69,8 @@ def preparation_errors(project: dict[str, Any], profile: dict[str, Any]) -> list
         errors.append("Не полностью подтверждены шрифты, размеры и оформление по образцу")
     try:
         prepared = prepare_rooms(data.get("rooms", []))
-        if not prepared:
-            errors.append("Таблица помещений не заполнена")
+        if not prepared and not documents:
+            errors.append("Приложите документ с категориями помещений")
     except ValueError as exc:
         errors.append(str(exc))
     return errors

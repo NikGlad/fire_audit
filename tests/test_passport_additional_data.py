@@ -36,6 +36,16 @@ class PassportAdditionalDataTests(unittest.TestCase):
         self.panel = self.gui.additional_data_panel
         self.project_file = self.gui.app.projects.project_dir('save-test') / 'project.json'
 
+    def test_room_editor_is_hidden_and_categories_can_be_attached(self):
+        notebook = next(widget for widget in self.panel.winfo_children()
+                        if widget.winfo_class() == "TNotebook")
+        self.assertNotIn("Помещения и категории",
+                         [notebook.tab(tab, "text") for tab in notebook.tabs()])
+        data = notebook.nametowidget(notebook.tabs()[0])
+        buttons = [child.cget("text") for parent in data.winfo_children()
+                   for child in parent.winfo_children() if child.winfo_class() == "TButton"]
+        self.assertIn("Добавить категории", buttons)
+
     def fill_draft(self):
         self.panel.values['special_conditions'].set('Уточнение заказчика')
         self.panel.values['category_approval_source'].set('Письмо заказчика')

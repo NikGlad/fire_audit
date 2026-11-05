@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .barriers import MODE, SOURCE_EXPLANATIONS_LAYER, preparation_errors
-from .barrier_inputs import room_key
+from .barrier_inputs import room_key, category_project_for_plan
 from .barrier_dxf import (library, point, build_dxf, model_snapshot, protected_changes, verify_entities,
                          supporting_snapshot, supporting_changes, equivalent)
 from .cad_bridge import AutoCADBridge, assert_drawing
@@ -121,6 +121,10 @@ def inside_boundary(p, boundary):
 
 
 def validate_plan(plan, project):
+    try:
+        project = category_project_for_plan(project, plan)
+    except ValueError as exc:
+        return [str(exc)]
     errors = []
     review = plan.get("review", {})
     if (review.get("gpzu_date") != project.get("dates", {}).get("gpzu") or not review.get("edition_basis")
@@ -381,11 +385,12 @@ class BarrierWorkflow:
             raise ValueError("План уже применялся. Для новых решений создайте новый запуск")
         self.freshness(slug, run)
         profile = read_json(self.app.paths.knowledge / "barrier_drawing_profile.json")
-        errors = preparation_errors(run["project_snapshot"], profile) + validate_plan(plan, run["project_snapshot"])
+        project = category_project_for_plan(run["project_snapshot"], plan)
+        errors = preparation_errors(project, profile) + validate_plan(plan, project)
         if errors:
             raise ValueError("\n".join(errors))
         plan = copy.deepcopy(plan)
-        data = run["project_snapshot"][MODE]
+        data = project[MODE]
         category_file = data["category_source"]
         input_files = [{"path":category_file.get("path") or category_file.get("snapshot_path"),
                         "sha256":category_file["sha256"], "role":"categories"}, *copy.deepcopy(data.get("attachments", []))]
