@@ -26,7 +26,6 @@ class AdditionalDataPanel(ttk.Frame):
         ttk.Label(self, textvariable=self.message, wraplength=950).pack(fill="x", pady=(0, 8))
         header = ttk.Frame(self); header.pack(fill="x")
         ttk.Button(header, text="Сохранить дополнительные данные", command=self.save).pack(side="left", padx=3)
-        ttk.Button(header, text="Проверить данные", command=self.readiness).pack(side="left", padx=3)
         tabs = ttk.Notebook(self); tabs.pack(fill="both", expand=True, pady=8)
         data = ttk.Frame(tabs, padding=8); tabs.add(data, text="Вводные и документы")
         # Keep legacy table bindings for existing passports without exposing an editor.
