@@ -87,7 +87,7 @@
     "color_index": 1,
     "linetype": "ByLayer",
     "linetype_scale": 200,
-    "text_style": "Битекс",
+    "text_style": "mytext",
     "font_file": "isocpeur.ttf",
     "font_family": "ISOCPEUR",
     "width_factor": 0.8,
@@ -97,8 +97,8 @@
   },
   "callout": {
     "entity_type": "MText",
-    "text_style": "ЭКСПЕРТИЗА",
-    "font_file": "tahoma.ttf",
+    "text_style": "mytext",
+    "font_file": "isocpeur.ttf",
     "text_height": 1200,
     "width": 28166.5456643612,
     "attachment": "TopLeft",
@@ -130,14 +130,14 @@
   },
   "legend_text": {
     "entity_type": "MText",
-    "text_style": "ЭКСПЕРТИЗА",
-    "font_file": "tahoma.ttf",
+    "text_style": "mytext",
+    "font_file": "isocpeur.ttf",
     "text_height": 300,
     "width": 9952.592142014299,
     "attachment": "TopLeft",
     "line_spacing": 1,
-    "width_factor": 1.0,
-    "oblique_angle": 0.0
+    "width_factor": 0.8,
+    "oblique_angle": 15
   },
   "dimensions": {
     "text_style": "mytext",
