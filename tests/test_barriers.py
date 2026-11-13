@@ -36,11 +36,12 @@ class BarrierRulesTests(unittest.TestCase):
             self.assertTrue(validate_created_entity({**good, **patch}, 'barrier', legend, 'wall_1'))
         self.assertTrue(validate_created_entity(good, 'barrier', legend, 'missing'))
 
-    def test_callout_rays_are_strictly_by_layer(self):
-        good = {'layer': LAYER, 'colorIndex': 256, 'linetype': 'ByLayer', 'lineWeight': 'ByLayer'}
+    def test_callout_rays_require_explicit_zero_weight(self):
+        good = {'layer': LAYER, 'colorIndex': 256, 'linetype': 'ByLayer', 'lineWeight': 'LineWeight000'}
         self.assertEqual(validate_created_entity(good, 'ray', []), [])
         for patch in ({'colorIndex': 1}, {'linetype': 'Continuous'},
-                      {'lineWeight': 'LineWeight050'}, {'lineWeight': 50}):
+                      {'lineWeight': 'LineWeight050'}, {'lineWeight': 50},
+                      {'lineWeight': 'ByLayer'}, {'lineWeight': -1}, {'lineWeight': False}):
             self.assertTrue(validate_created_entity({**good, **patch}, 'ray', []), patch)
 
     def test_category_requires_its_own_layer(self):
@@ -93,7 +94,7 @@ class BarrierRulesTests(unittest.TestCase):
                 'leader_entity_ids':['L1'], 'text_above_actual_plan_bounds':True,
                 'no_text_overlaps':True,'single_start_adjacent_to_own_text':True,
                 'targets_verified':True,'same_floor':True,'visual_verified':True,
-                'rays_all_properties_by_layer':True}]},
+                'rays_color_and_linetype_by_layer':True, 'rays_explicit_zero_lineweight':True}]},
             'abk_public_parts_f4_3': {'status': 'complete', 'items': [
                 {'functional_class': 'Ф4.3', 'boundary_review_complete': True}]},
             'escape_routes_by_gpzu_date': {'status': 'complete', 'items': [
@@ -120,7 +121,7 @@ class BarrierRulesTests(unittest.TestCase):
         self.assertTrue(any('всех этажей' in error for error in errors))
         self.assertTrue(any('single_start' in error for error in errors))
         broken = copy.deepcopy(registry)
-        broken['barrier_assessment']['completion_registers']['callout_layout']['items'][0]['rays_all_properties_by_layer'] = False
+        broken['barrier_assessment']['completion_registers']['callout_layout']['items'][0]['rays_color_and_linetype_by_layer'] = False
         self.assertTrue(any('ByLayer' in error for error in barrier_completion_errors(broken)))
 
     def test_mode_task_and_every_mode_receive_shared_rules(self):

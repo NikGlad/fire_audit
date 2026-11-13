@@ -342,6 +342,13 @@ def _issued_graphics_required(finding: dict[str, Any]) -> bool:
     )
 
 
+def _ray_zero_weight(item: dict[str, Any]) -> bool:
+    value = item.get("lineweight")
+    return (not isinstance(value, bool) and value in (0, "LineWeight000")
+            and item.get("lineweight_by_layer") is False
+            and item.get("lineweight_verified") is True)
+
+
 def _result_graphics_rows(autocad: dict[str, Any]) -> list | None:
     created, reused = autocad.get("created_objects", []), autocad.get("reused_objects", [])
     return created + reused if isinstance(created, list) and isinstance(reused, list) else None
@@ -457,8 +464,8 @@ def _created_graphics_state(finding: dict[str, Any]) -> dict[str, Any]:
                 continue
         correct_properties = all(
             item.get(key) is True
-            for key in ("color_by_layer", "linetype_by_layer", "lineweight_by_layer")
-        )
+            for key in ("color_by_layer", "linetype_by_layer")
+        ) and (_ray_zero_weight(item) if role == "ray" else item.get("lineweight_by_layer") is True)
         expected_layer = _source_layer_for_graphic(item, finding)
         if role in PURPLE_OBJECT_ROLES:
             if not expected_layer or item.get("layer") != expected_layer or not correct_properties:
@@ -527,7 +534,10 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
             ("linetype_by_layer", "тип линии"),
             ("lineweight_by_layer", "вес линии"),
         ):
-            if item.get(key) is not True:
+            if key == "lineweight_by_layer" and role == "ray":
+                if not _ray_zero_weight(item):
+                    errors.append(f"{prefix}: вес луча должен быть явно 0,00 мм с подтверждением чтением AutoCAD")
+            elif item.get(key) is not True:
                 errors.append(f"{prefix}: {label} должен быть ByLayer")
 
     if _issued_graphics_required(finding) and autocad.get("status") in {"applied", "post_checked"}:

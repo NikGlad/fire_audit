@@ -21,7 +21,10 @@
     "layer": "",
     "color_by_layer": null,
     "linetype_by_layer": null,
-    "lineweight_by_layer": null
+    "lineweight_by_layer": null,
+    "lineweight": null
   },
-  "changes": []
+  "changes": [],
+  "lineweight": null,
+  "lineweight_verified": false
 }

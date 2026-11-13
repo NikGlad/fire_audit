@@ -29,7 +29,7 @@ class DimensionBridge:
              "text": "Расстояние между проёмами предусмотреть не менее требуемого нормой."},
             {"handle": "C1", "type": "Line", "layer": LAYER, "space": "Model",
              "startPoint": [-1400, 300, 0], "endPoint": [650, 300, 0],
-             "colorIndex": 256, "linetype": "ByLayer", "lineweight": -1},
+             "colorIndex": 256, "linetype": "ByLayer", "lineweight": 0},
         ]
         self.boxes = {"D1": [-5, -5, 1250, 500], "B1": [-2000, 100, -1400, 500]}
         self.calls = []

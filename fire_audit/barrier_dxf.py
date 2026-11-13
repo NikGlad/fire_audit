@@ -265,7 +265,7 @@ def build_dxf(source, destination, plan, profile):
             targets = item.get("targets") if item.get("element") == "vent_chamber" else [item["target"]]
             for target in targets:
                 entities.append(model.add_line(point(item["leader_start"]), point(target),
-                    dxfattribs={"layer": LAYER, "color": 256, "linetype": "ByLayer", "lineweight": -1}))
+                    dxfattribs={"layer": LAYER, "color": 256, "linetype": "ByLayer", "lineweight": 0}))
         elif kind == "dimension":
             style = dimensions_style(doc, profile)
             p1, p2, base = point(item["p1"]), point(item["p2"]), point(item["base"])

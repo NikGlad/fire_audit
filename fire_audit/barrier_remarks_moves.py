@@ -266,5 +266,6 @@ def validate_move_evidence(baseline, latest, evidence):
                 raise ValueError("Свежая геометрия луча не связывает текст требования с указанным размером")
             if (ray.get("colorIndex", ray.get("color")) not in (256, "ByLayer")
                     or str(ray.get("linetype", "")).casefold() != "bylayer"
-                    or ray.get("lineweight") not in (-1, "ByLayer")):
-                raise ValueError("Адресующий луч не соответствует обязательным свойствам ByLayer")
+                    or ray.get("lineweight") not in (0, "LineWeight000")
+                    or isinstance(ray.get("lineweight"), bool)):
+                raise ValueError("Адресующий луч должен иметь цвет и тип линии ByLayer, явный вес 0,00 мм")

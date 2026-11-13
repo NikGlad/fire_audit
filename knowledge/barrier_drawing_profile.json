@@ -214,7 +214,9 @@
     "independent_door_and_window_rules_unchanged": true
   },
   "completion_rules": {
-    "callout_rays_all_properties_by_layer": true,
+    "callout_rays_color_and_linetype_by_layer": true,
+    "callout_ray_lineweight": 0,
+    "callout_ray_explicit_zero_lineweight_required": true,
     "callout_ray_lineweight_50_forbidden": true,
     "general_barrier_opening_requirements_are_recorded_in_legend": true,
     "generic_barrier_door_callouts_are_forbidden": true,
@@ -337,7 +339,9 @@
     "reuse_current_valid_dimensions": true,
     "one_ray_start_per_note_per_floor": true,
     "ray_type": "Line",
-    "all_ray_properties_by_layer": true,
+    "callout_rays_color_and_linetype_by_layer": true,
+    "callout_ray_lineweight": 0,
+    "callout_ray_explicit_zero_lineweight_required": true,
     "no_fabricated_measurement_when_openings_unknown": true,
     "STU_alternatives_from_current_project_only": true,
     "unrelated_common_route_clause_in_standard_facade_callout": false,

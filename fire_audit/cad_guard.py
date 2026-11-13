@@ -422,7 +422,7 @@ class GuardedCAD:
         assert_drawing(client.call("get_drawing_info"), state["source_path"])
         layer = "экспертиза пояснения" if op["role"] == "purple_explanation" else "экспертиза"
         client.call_write("change_entity_properties", {"handles": handles, "layer": layer, "color": 256,
-                                                       "linetype": "ByLayer", "lineweight": -1})
+                                                       "linetype": "ByLayer", "lineweight": 0 if op["role"] == "ray" else -1})
         mapping[op["id"]] = handles
         plan["executed_operations"].append({"id": op["id"], "args": args, "handles": handles})
         plan["pending_operation"] = None

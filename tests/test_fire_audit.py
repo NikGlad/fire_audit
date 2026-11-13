@@ -1571,7 +1571,9 @@ class FireAuditTestCase(unittest.TestCase):
                 "layer": layer,
                 "color_by_layer": True,
                 "linetype_by_layer": True,
-                "lineweight_by_layer": True,
+                "lineweight_by_layer": role != "ray",
+                "lineweight": 0 if role == "ray" else -1,
+                "lineweight_verified": True,
                 "text_style": "Standard",
             }
 

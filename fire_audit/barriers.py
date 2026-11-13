@@ -98,8 +98,8 @@ def validate_created_entity(entity: dict[str, Any], role: str, legend: list[dict
             errors.append("Цвет луча должен быть строго ByLayer (По слою)")
         if linetype not in ("ByLayer", "По слою"):
             errors.append("Тип линии луча должен быть строго ByLayer (По слою)")
-        if lineweight not in (-1, "ByLayer", "По слою"):
-            errors.append("Вес линии луча должен быть строго ByLayer (По слою); вес 50 запрещён")
+        if lineweight not in (0, "LineWeight000") or isinstance(lineweight, bool):
+            errors.append("Вес линии луча должен быть явно 0,00 мм; ByLayer, ByBlock и ненулевой вес запрещены")
     return errors
 
 
@@ -185,8 +185,10 @@ def barrier_completion_errors(registry: dict[str, Any]) -> list[str]:
         for flag in ("text_above_actual_plan_bounds", "no_text_overlaps", "single_start_adjacent_to_own_text", "targets_verified", "same_floor", "visual_verified"):
             if item.get(flag) is not True:
                 errors.append(f"Не подтверждён контроль размещения выноски: {flag}")
-        if item.get("rays_all_properties_by_layer") is not True:
-            errors.append("Не подтверждено, что цвет, тип линии и вес всех лучей выноски установлены ByLayer")
+        if item.get("rays_color_and_linetype_by_layer") is not True:
+            errors.append("Не подтверждены цвет и тип линии всех лучей выноски ByLayer")
+        if item.get("rays_explicit_zero_lineweight") is not True:
+            errors.append("Не подтверждён явный вес всех лучей выноски 0,00 мм")
 
     for item in registers.get("abk_public_parts_f4_3", {}).get("items", []):
         if item.get("functional_class") != "Ф4.3" or item.get("boundary_review_complete") is not True:

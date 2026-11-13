@@ -101,4 +101,5 @@ def properties_ok(entity: dict, role: str) -> bool:
     weight = str(entity.get("lineWeight", entity.get("lineweight", ""))).lower()
     return (entity.get("layer") == expected and entity.get("colorIndex") == 256
             and str(entity.get("linetype", "")).lower() == "bylayer"
-            and weight in {"bylayer", "-1"})
+            and not isinstance(entity.get("lineWeight", entity.get("lineweight")), bool)
+            and weight in ({"0", "lineweight000"} if role == "ray" else {"bylayer", "-1"}))

@@ -64,7 +64,7 @@ class BarrierWorkflowTests(unittest.TestCase):
         ray = doc.entitydb[callout_receipt['handles'][1]]
         self.assertEqual(ray.dxf.color, 256)
         self.assertEqual(ray.dxf.linetype, 'ByLayer')
-        self.assertEqual(ray.dxf.lineweight, -1)
+        self.assertEqual(ray.dxf.lineweight, 0)
         dim = doc.entitydb[receipt['created'][3]['handles'][0]]
         style = doc.dimstyles.get(dim.dxf.dimstyle)
         self.assertEqual(style.dxf.dimtxt, 300)
@@ -165,7 +165,7 @@ class BarrierWorkflowTests(unittest.TestCase):
             ray = result.entitydb[handle]
             self.assertEqual(ray.dxf.color, 256)
             self.assertEqual(ray.dxf.linetype, 'ByLayer')
-            self.assertEqual(ray.dxf.lineweight, -1)
+            self.assertEqual(ray.dxf.lineweight, 0)
         plan['items'][-1]['text'] = 'Другой текст'
         self.assertTrue(any('обязательный текст' in error for error in validate_plan(plan, self.project)))
 

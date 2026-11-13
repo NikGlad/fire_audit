@@ -57,7 +57,7 @@ class FakeCAD:
             raise TimeoutError("synthetic uncertain result")
         if name == "change_entity_properties":
             for h in args["handles"]:
-                self.entities[h].update(layer=args["layer"], colorIndex=args["color"], linetype=args["linetype"], lineWeight="ByLayer")
+                self.entities[h].update(layer=args["layer"], colorIndex=args["color"], linetype=args["linetype"], lineWeight="LineWeight000" if args["lineweight"] == 0 else "ByLayer")
             return {"success": True}
         if name == "copy_entities":
             created = []
