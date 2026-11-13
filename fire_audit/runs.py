@@ -10,7 +10,10 @@ from .io_utils import read_json, utc_now, write_json, atomic_write_text
 from .knowledge import KnowledgeBase
 from .paths import AppPaths
 from .projects import ProjectStore, height_for_task
-from .dwg_selection import dwg_location, explicit_dwg_path, resolved_source_path, dwg_selection_markdown
+from .dwg_selection import (
+    dwg_location, dwg_selection_markdown, explicit_dwg_path, has_source_preservation_evidence,
+    resolved_source_path,
+)
 from .barrier_inputs import fire_pump_rooms_markdown, additional_inputs_markdown
 from .validation import validate_final_numbering, validate_registry
 from .barriers import (MODE as BARRIER_MODE, LAYER as BARRIER_LAYER, CATEGORY_LAYER,
@@ -1059,13 +1062,8 @@ class RunStore:
             )
         if source_document_contains_results:
             raise ValueError("Исходный документ должен оставаться без результатов нового запуска; работайте в отдельной копии")
-        if not copy_did_not_change_open_source_identity:
-            preservation = actions.get("source_preservation", {})
-            before = str(preservation.get("sha256_before_edits", ""))
-            after = str(preservation.get("sha256_after_edits", ""))
-            if (len(before) != 64 or before.lower() != after.lower()
-                    or preservation.get("source_last_write_unchanged") is not True):
-                raise ValueError("Не подтверждена сохранность исходного DWG после смены активного имени")
+        if not copy_did_not_change_open_source_identity and not has_source_preservation_evidence(actions):
+            raise ValueError("Не подтверждена сохранность исходного DWG после смены активного имени")
 
         barrier_remarks_service.require_complete(self, slug, run_id, str(result))
         loaded = self.load(slug, run_id)

@@ -30,6 +30,19 @@ def resolved_source_path(run: dict, registry: dict) -> str:
             or explicit_dwg_path(dwg_location(run.get('project_snapshot', {}))))
 
 
+def has_source_preservation_evidence(actions: dict) -> bool:
+    evidence = actions.get("source_preservation")
+    if not isinstance(evidence, dict):
+        return False
+    before = str(evidence.get("sha256_before_edits", ""))
+    after = str(evidence.get("sha256_after_edits", ""))
+    return (
+        re.fullmatch(r"[0-9a-fA-F]{64}", before) is not None
+        and before.lower() == after.lower()
+        and evidence.get("source_last_write_unchanged") is True
+    )
+
+
 def dwg_selection_markdown(project: dict) -> str:
     location = dwg_location(project)
     supplied = '\n'.join('> ' + line for line in location.splitlines()) if location else '> Не заполнено — использовать открытые DWG в AutoCAD.'

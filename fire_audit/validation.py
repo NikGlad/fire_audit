@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from .dwg_selection import has_source_preservation_evidence
 from .instruction_contracts import approved_rule_text_errors
 
 
@@ -1274,7 +1275,10 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
         if dwg_actions.get("source_document_kept_unchanged") is not True:
             errors.append("Не подтверждена сохранность исходного DWG без изменений")
         if dwg_actions.get("copy_did_not_change_open_source_identity") is not True:
-            errors.append("Не подтверждена сохранность пути и идентичности исходного открытого документа")
+            if has_source_preservation_evidence(dwg_actions):
+                warnings.append("При создании копии активный документ сменил имя. Хеш и время записи исходного DWG совпадают.")
+            else:
+                errors.append("Не подтверждена сохранность пути и идентичности исходного открытого документа")
     graphics_layer_check = {
         "all_violation_graphics_on_expertise_layer": all_violation_graphics_on_expertise_layer,
         "all_purple_explanations_on_expertise_explanations_layer": (

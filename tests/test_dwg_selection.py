@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fire_audit.dwg_selection import explicit_dwg_path
 from fire_audit.runs import MODE_LABELS
+from fire_audit.validation import validate_registry
 from mcp_server import MCPServer
 
 
@@ -91,6 +92,46 @@ class DwgSelectionTests(unittest.TestCase):
             self.app.runs.record_result_dwg('dwg-test', run_id, str(result),
                 source_path='Использовать текущий файл', source_document_contains_results=False,
                 copy_did_not_change_open_source_identity=True)
+
+    def test_article89_completion_accepts_independent_source_preservation_evidence(self):
+        created = self.app.runs.create('dwg-test', 'article89')
+        run_id = created['run']['run_id']
+        source = self.root / 'source.dwg'
+        source.write_bytes(b'synthetic source fixture')
+        result = source.with_name(f'source__article89__{run_id}.dwg')
+        result.write_bytes(b'synthetic result fixture')
+        registry = self.app.runs.load('dwg-test', run_id)['registry']
+        actions = registry['dwg_actions']
+        actions.update({
+            'work_completed': True,
+            'source_path': str(source),
+            'result_copy_created': True,
+            'result_copy_path': str(result),
+            'source_document_kept_unchanged': True,
+            'source_document_contains_results': False,
+            'copy_did_not_change_open_source_identity': False,
+        })
+        self.assertFalse(validate_registry(registry, for_application=True)['ok'])
+        for before, after, same_write_time in (
+            ('a' * 64, 'b' * 64, True),
+            ('a' * 64, 'a' * 64, False),
+            ('z' * 64, 'z' * 64, True),
+        ):
+            with self.subTest(before=before, after=after, same_write_time=same_write_time):
+                actions['source_preservation'] = {
+                    'sha256_before_edits': before,
+                    'sha256_after_edits': after,
+                    'source_last_write_unchanged': same_write_time,
+                }
+                self.assertFalse(validate_registry(registry, for_application=True)['ok'])
+        actions['source_preservation'] = {
+            'sha256_before_edits': 'a' * 64,
+            'sha256_after_edits': 'A' * 64,
+            'source_last_write_unchanged': True,
+        }
+        validation = validate_registry(registry, for_application=True)
+        self.assertTrue(validation['ok'], validation['errors'])
+        self.assertEqual(len(validation['warnings']), 1)
 
 
 if __name__ == '__main__':
