@@ -219,7 +219,8 @@ def _validate_individual_analysis(finding: dict[str, Any]) -> list[str]:
         "reasoning_specific_verified",
         "no_copied_explanation_verified",
     )
-    if any(second_pass.get(key) is not True for key in second_pass_checks):
+    if any(second_pass.get(key) is not True for key in second_pass_checks
+           if not (key == "norm_reopened" and _preserved_common_system_text(finding))):
         errors.append(f"{finding_id}: обязательная повторная проверка выполнена не полностью")
     return errors
 
@@ -389,6 +390,45 @@ def _preserved_analysis_graphic(item: dict[str, Any], finding: dict[str, Any]) -
             and _preserved_existing_graphic(item, finding))
 
 
+def _preserved_stage_yellow_graphic(item: dict[str, Any], finding: dict[str, Any]) -> bool:
+    """A retired stage template keeps its original properties except external ACI 2."""
+    if (finding.get("mode") != "stage"
+            or finding.get("output", {}).get("stage_is_issued") is not False
+            or finding.get("decision", {}).get("status") not in NON_ISSUED_REVIEWED
+            or item not in finding.get("autocad", {}).get("reused_objects", [])
+            or not _reused_object_valid(item) or item.get("colorIndex") != 2):
+        return False
+    before = item["properties_before"]
+    # Require the actual colour readback and a meaningful source snapshot; a
+    # flag alone must not excuse edited text, moved geometry, or changed weight.
+    required = {"colorIndex", "linetype", "lineWeight", "type"}
+    if not required.issubset(before) or item.get("color_by_layer") is not False:
+        return False
+    if item.get("role") in TEXT_OBJECT_ROLES and not any(k in before for k in ("contents", "textString")):
+        return False
+    return all(item.get(key) == value for key, value in before.items()
+               if key not in {"color", "colorIndex", "color_by_layer"})
+
+
+def _preserved_common_system_text(finding: dict[str, Any]) -> bool:
+    """doc_00_008 excludes normative rereview, never the preservation check."""
+    output = finding.get("output", {})
+    source = finding.get("source_text", "")
+    if (output.get("preserved_by_explicit_user_exception") is not True
+            or output.get("is_general_requirement") is not True
+            or "doc_00_008" not in str(finding.get("analysis", {}).get("exclusion_reason", ""))
+            or not isinstance(source, str) or not source
+            or output.get("remark_text") != source
+            or not any(term in source.lower() for term in
+                       ("противодымн", "систему оповещения и управления эвакуацией"))):
+        return False
+    rows = [row for row in finding.get("autocad", {}).get("reused_objects", [])
+            if row.get("role") == "main_text" and row.get("entity_id") == finding.get("source_text_id")]
+    return (len(rows) == 1 and _reused_object_valid(rows[0])
+            and rows[0].get("contents") == source
+            and rows[0].get("properties_before", {}).get("contents") == source)
+
+
 def _preserved_existing_graphic(item: dict[str, Any], finding: dict[str, Any]) -> bool:
     """Unaddressed measurements stay in their original layer; targets inherit their source."""
     if (item.get("action", "reused") == "modified"
@@ -460,7 +500,7 @@ def _created_graphics_state(finding: dict[str, Any]) -> dict[str, Any]:
         if item in autocad.get("reused_objects", []):
             if not _reused_object_valid(item):
                 state["violation_ok"] = state["purple_ok"] = False
-            if _preserved_existing_graphic(item, finding):
+            if _preserved_existing_graphic(item, finding) or _preserved_stage_yellow_graphic(item, finding):
                 continue
         correct_properties = all(
             item.get(key) is True
@@ -519,7 +559,7 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
                 errors.append(f"{prefix}: не подтверждены происхождение, снимок свойств и точные изменения до/после существующего объекта")
             if item.get("source_kind") == "project_geometry" and item.get("action") == "modified":
                 errors.append(f"{prefix}: исходную проектную графику изменять нельзя")
-            if _preserved_existing_graphic(item, finding):
+            if _preserved_existing_graphic(item, finding) or _preserved_stage_yellow_graphic(item, finding):
                 continue
         elif item.get("action", "created") != "created":
             errors.append(f"{prefix}: существующий объект нельзя записывать в created_objects")
@@ -978,7 +1018,13 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
         and autocad.get("ray_required_by_sample") is None
     ):
         warnings.append(f"{finding_id}: не определено по образцу, требуется ли луч от общего требования")
-    if autocad.get("by_layer") is not True:
+    preserved_yellow_main = any(
+        row.get("entity_id") == finding.get("source_text_id")
+        and row.get("role") in {"main_text", "purple_explanation"}
+        and _preserved_stage_yellow_graphic(row, finding)
+        for row in autocad.get("reused_objects", []) if isinstance(row, dict)
+    )
+    if autocad.get("by_layer") is not True and not preserved_yellow_main:
         errors.append(f"{finding_id}: оформление должно быть ByLayer")
     expected_main_layer = (
         PURPLE_EXPLANATIONS_LAYER
