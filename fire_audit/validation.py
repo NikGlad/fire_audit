@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import math
 from .dwg_selection import has_source_preservation_evidence
 from .instruction_contracts import approved_rule_text_errors
 
@@ -899,10 +900,13 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
         and "9.3.3" in combined_norm
     )
     if direct_minimum_exit_rule:
+        selection_rules = {"minimum_first_floor_room_exit_under_1200"}
+        if is_stage:
+            selection_rules.add("minimum_first_floor_room_exit")
         if autocad.get("ray_required") is not True:
             errors.append(f"{finding_id}: для п. 4.2.19 и п. 9.3.3 обязательный луч не зарегистрирован")
-        if autocad.get("ray_rule") != "minimum_first_floor_room_exit_under_1200":
-            errors.append(f"{finding_id}: для п. 4.2.19 и п. 9.3.3 не подтверждён выбор наименьшего выхода менее 1200 мм")
+        if autocad.get("ray_rule") not in selection_rules:
+            errors.append(f"{finding_id}: для п. 4.2.19 и п. 9.3.3 не подтверждён выбор наименьшего выхода")
         if not autocad.get("ray_planned") and not autocad.get("ray_entity_ids"):
             errors.append(f"{finding_id}: луч для п. 4.2.19 и п. 9.3.3 не запланирован и не зарегистрирован")
         if not str(autocad.get("target_semantics", "")).strip():
@@ -912,15 +916,29 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
         if _normalize_floor(autocad.get("target_floor")) != "1":
             errors.append(f"{finding_id}: цель требования п. 4.2.19 и п. 9.3.3 должна быть на первом этаже")
         if autocad.get("target_confirmed") is not True or not autocad.get("target_entity_ids"):
-            errors.append(f"{finding_id}: не подтверждён AutoCAD-объект наименьшего выхода менее 1200 мм")
-        if measurement.get("selection_rule") != "minimum_first_floor_room_exit_under_1200":
+            errors.append(f"{finding_id}: не подтверждён AutoCAD-объект наименьшего выхода")
+        if measurement.get("selection_rule") not in selection_rules:
             errors.append(f"{finding_id}: в обмере не указано правило выбора наименьшего выхода")
         if measurement.get("selection_verified") is not True:
             errors.append(f"{finding_id}: не подтверждено сравнение ширины всех выходов-кандидатов")
         width = measurement.get("value")
-        if not isinstance(width, (int, float)) or width >= 1200 or str(measurement.get("unit", "")).lower() not in {"мм", "mm"}:
-            errors.append(f"{finding_id}: выбранный выход должен иметь подтверждённую ширину менее 1200 мм")
-        if measurement.get("in_clear") is not True:
+        valid_width = (
+            isinstance(width, (int, float)) and not isinstance(width, bool)
+            and math.isfinite(width) and width > 0
+            and str(measurement.get("unit", "")).lower() in {"мм", "mm"}
+        )
+        if not valid_width or (not is_stage and width >= 1200):
+            requirement = "положительную измеренную ширину в мм" if is_stage else "подтверждённую ширину менее 1200 мм"
+            errors.append(f"{finding_id}: выбранный выход должен иметь {requirement}")
+        indicative_stage_measurement = (
+            is_stage and measurement.get("in_clear") is False
+            and measurement.get("measurement_type") == "plan_opening_width"
+            and measurement.get("clear_width_pending") is True
+            and bool(str(measurement.get("method", "")).strip())
+            and bool(str(measurement.get("limitations", "")).strip())
+            and status in {"insufficient_data", "not_reviewed"}
+        )
+        if measurement.get("in_clear") is not True and not indicative_stage_measurement:
             errors.append(f"{finding_id}: ширина выбранной двери не подтверждена обмером в свету")
         if str(measurement.get("dimension_layer", "")).strip().lower() != "экспертиза":
             errors.append(f"{finding_id}: размер ширины выбранной двери должен быть в слое экспертиза")

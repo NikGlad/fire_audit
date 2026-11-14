@@ -1115,6 +1115,31 @@ class FireAuditTestCase(unittest.TestCase):
         ready = self.app.runs.validate("test", run_id)
         self.assertTrue(ready["ok"], ready["errors"])
 
+        # The mandatory stage illustration also applies to a compliant wide exit.
+        finding["autocad"]["ray_rule"] = "minimum_first_floor_room_exit"
+        finding["measurement"]["selection_rule"] = "minimum_first_floor_room_exit"
+        for width in (1200, 1400):
+            with self.subTest(stage_width=width):
+                finding["measurement"]["value"] = width
+                self.app.runs.add_finding("test", run_id, finding)
+                result = self.app.runs.validate("test", run_id)
+                self.assertTrue(result["ok"], result["errors"])
+
+        # A plan measurement must explicitly disclose the unknown clear width.
+        finding["measurement"].update({
+            "in_clear": False, "measurement_type": "plan_opening_width",
+            "clear_width_pending": True,
+            "method": "Между показанными гранями проёма на плане",
+            "limitations": "Коробка и выступ фурнитуры не установлены; это не чистый просвет",
+        })
+        self.app.runs.add_finding("test", run_id, finding)
+        result = self.app.runs.validate("test", run_id)
+        self.assertTrue(result["ok"], result["errors"])
+        finding["measurement"]["limitations"] = ""
+        self.app.runs.add_finding("test", run_id, finding)
+        result = self.app.runs.validate("test", run_id)
+        self.assertTrue(any("обмером в свету" in error for error in result["errors"]))
+
     def test_ambiguous_room_query_targets_only_verified_explication_gaps(self) -> None:
         self.create_ready_project()
         result = self.app.runs.create("test", "stage")
