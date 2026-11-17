@@ -696,6 +696,60 @@ def _group_objects(finding: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES}
 
 
+def _restored_explanation_ids(finding: dict[str, Any]) -> set[str]:
+    """Allow a missing explanation to be restored without duplicating the core group."""
+    ac = finding.get("autocad", {})
+    source = ac.get("source_group", {})
+    proof = source.get("restored_explanation", {})
+    if not isinstance(proof, dict) or proof.get("copy_method") != "copy_existing_explanation":
+        return set()
+    source_ids = set(source.get("purple_explanation_entity_ids", []))
+    ids = set(proof.get("created_entity_ids", []))
+    if (not ids or not source_ids or set(proof.get("source_entity_ids", [])) != source_ids
+            or proof.get("source_readback_verified") is not True
+            or not proof.get("evidence") or not proof.get("source_text")
+            or not proof.get("source_text_style")):
+        return set()
+    rows = [r for r in ac.get("created_objects", []) if isinstance(r, dict) and r.get("entity_id") in ids]
+    if len(rows) != len(ids):
+        return set()
+    for row in rows:
+        if (row.get("role") != "purple_explanation" or row.get("action") != "created"
+                or row.get("properties_re_read") is not True
+                or row.get("layer") != "экспертиза пояснения"
+                or row.get("contents") != proof["source_text"]
+                or row.get("text_style") != proof["source_text_style"]
+                or row.get("properties_after", {}).get("contents") != row.get("contents")
+                or row.get("properties_after", {}).get("layer") != row.get("layer")):
+            return set()
+    return ids
+
+
+def _verified_source_explanation_side(finding: dict[str, Any]) -> str | None:
+    """Preserve the template's relative layout when both source and result were reread."""
+    ac = finding.get("autocad", {})
+    source = ac.get("source_group", {})
+    proof = source.get("explanation_layout", {})
+    if (not isinstance(proof, dict) or proof.get("verified") is not True or not proof.get("evidence")
+            or source.get("relative_positions_preserved") is not True
+            or source.get("text_styles_preserved") is not True):
+        return None
+    def side(main, explanation):
+        if not (isinstance(main, list) and isinstance(explanation, list)
+                and len(main) == len(explanation) == 4
+                and all(isinstance(v, (int, float)) for v in main + explanation)):
+            return None
+        if explanation[2] <= main[0]: return "left"
+        if explanation[0] >= main[2]: return "right"
+        if explanation[1] >= main[3]: return "top"
+        if explanation[3] <= main[1]: return "bottom"
+        return None
+    old = side(proof.get("source_main_bounds"), proof.get("source_explanation_bounds"))
+    new = side(proof.get("result_main_bounds"), proof.get("result_explanation_bounds"))
+    expected = "left" if old == "bottom" else old
+    return new if new and new == expected else None
+
+
 def _validate_reused_group(finding: dict[str, Any]) -> list[str]:
     """Reusing a full reread group must not masquerade as creating a copy."""
     prefix = f"{finding.get('id') or 'без id'}: существующая группа замечания"
@@ -705,8 +759,9 @@ def _validate_reused_group(finding: dict[str, Any]) -> list[str]:
     if (source.get("copy_source") != "existing_result_group"
             or source.get("copy_method") != "reuse_verified_group"):
         errors.append(f"{prefix}: не подтверждён способ повторного использования группы")
-    if source.get("created_copy_entity_ids") or any(
-        isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES
+    restored = _restored_explanation_ids(finding)
+    if set(source.get("created_copy_entity_ids", [])) - restored or any(
+        isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES and row.get("entity_id") not in restored
         for row in ac.get("created_objects", [])
     ):
         errors.append(f"{prefix}: повторное использование нельзя записывать как создание копий")
@@ -717,7 +772,7 @@ def _validate_reused_group(finding: dict[str, Any]) -> list[str]:
             errors.append(f"{prefix}: требуется один существующий объект роли {role}")
     if any(not _reused_object_valid(row) for row in core):
         errors.append(f"{prefix}: не подтверждены происхождение и повторное чтение свойств полной группы")
-    if source.get("left_explanation_present") is True and not any(row.get("role") == "purple_explanation" for row in core):
+    if source.get("left_explanation_present") is True and not restored and not any(row.get("role") == "purple_explanation" for row in core):
         errors.append(f"{prefix}: отсутствует существующее пояснение группы")
     if ac.get("status") not in {"applied", "post_checked"}:
         errors.append(f"{prefix}: существующая группа не проверена после размещения")
@@ -1220,7 +1275,8 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
                 warnings.append(f"{finding_id}: расстояние от наружной стены отличается от ориентировочных 30000 мм")
 
             if source_group.get("purple_explanation_present") is True:
-                expected_side = {"left": "left", "top": "top", "right": "right", "bottom": "left"}.get(side)
+                expected_side = (_verified_source_explanation_side(finding)
+                                 or {"left": "left", "top": "top", "right": "right", "bottom": "left"}.get(side))
                 if placement.get("explanation_side") != expected_side:
                     errors.append(f"{finding_id}: фиолетовое пояснение расположено не с требуемой стороны")
         if autocad.get("ray_required_by_sample") and not autocad.get("target_entity_ids"):
@@ -1389,6 +1445,9 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
                 ("пояснение о невыдаче", output.get("non_issue_explanation", {}).get("text", "")),
             )
             for label, value in explanations:
+                if (label == "пояснение" and autocad.get("linked_finding_id")
+                        and not _linked_group_errors(finding, findings_by_id)):
+                    continue
                 normalized = " ".join(str(value).lower().split())
                 if not normalized:
                     continue
