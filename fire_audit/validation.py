@@ -1087,7 +1087,8 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
             _validate_stairwell_facade_opening_clearance(finding_id, finding, measurement, autocad)
         )
     if stairwell_facade_opening_clearance and status in {"compliant", "not_applicable", "insufficient_data"}:
-        if measurement.get("dimension_entity_ids") or measurement.get("opening_clearance_checks") or autocad.get("ray_entity_ids"):
+        if (measurement.get("dimension_entity_ids") or measurement.get("opening_clearance_checks")
+                or (autocad.get("ray_entity_ids") and not _mandatory_user_requirement(finding))):
             errors.append(f"{finding_id}: при отсутствии подтверждённого нарушения запрещены постоянный размер и луч")
     ambiguous_room_query = (
         is_stage

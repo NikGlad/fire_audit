@@ -56,6 +56,21 @@ class MandatoryMaterialRequirementTests(unittest.TestCase):
         errors, _ = validate_finding(self.requirement(), for_application=True)
         self.assertTrue(any("полное чтение" in e for e in errors))
 
+    def test_wall_requirement_with_opening_alternative_can_point_to_wall(self):
+        finding = self.requirement()
+        finding["source_text"] = (
+            "Наружную стену лестничной клетки предусмотреть с требуемой огнестойкостью. "
+            "Вариант: наружную стену на расстоянии 4 м от угла предусмотреть без проёмов."
+        )
+        message = "при отсутствии подтверждённого нарушения запрещены постоянный размер и луч"
+        self.assertFalse(any(message in e for e in validate_finding(finding)[0]))
+        # The policy authorizes a wall ray, not a fabricated opening measurement.
+        finding["measurement"] = {"dimension_entity_ids": ["DIM"]}
+        self.assertTrue(any(message in e for e in validate_finding(finding)[0]))
+        finding.pop("measurement")
+        finding["output"].pop("mandatory_requirement")
+        self.assertTrue(any(message in e for e in validate_finding(finding)[0]))
+
     def test_compliant_or_inapplicable_is_not_material_exception(self):
         for status in ["compliant", "not_applicable"]:
             finding = self.requirement()
