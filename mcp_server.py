@@ -502,7 +502,7 @@ TOOLS = [
     ),
     tool(
         "record_final_numbering",
-        "Записать финальную сквозную нумерацию после завершения всей оценки соответствия.",
+        "Записать сквозную нумерацию всех выданных замечаний: старые номера не учитывать, снизу вверх, в одном ряду слева направо, от 1 до последнего замечания на кровле. Отдельное поручение на перенумерацию не означает завершения нормативной проверки.",
         {
             "type": "object",
             "properties": {
@@ -518,7 +518,7 @@ TOOLS = [
                             "category": {"type": "string", "enum": ["lowest_floor", "stage_frame", "upper_floor"]},
                             "floor_label": {"type": "string"},
                             "floor_order": {"type": "number"},
-                            "placement_sequence": {"type": "integer", "minimum": 1},
+                            "placement_sequence": {"type": "integer", "minimum": 1, "description": "Глобальный порядок 1..N по текущему расположению рамок: ряды снизу вверх, внутри ряда слева направо. Не сбрасывать на каждом этаже; категория и старый номер не определяют порядок."},
                             "number_entity_ids": {"type": "array", "items": {"type": "string"}},
                             "remark_entity_ids": {"type": "array", "items": {"type": "string"}},
                             "source_mode": {"type": "string"}

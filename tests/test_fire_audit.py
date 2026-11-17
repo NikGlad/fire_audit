@@ -1445,7 +1445,7 @@ class FireAuditTestCase(unittest.TestCase):
                 "final_number": 2,
                 "category": "stage_frame",
                 "floor_label": "рамка этапизации",
-                "placement_sequence": 1,
+                "placement_sequence": 2,
                 "number_entity_ids": ["N2"],
                 "remark_entity_ids": ["R2"],
                 "source_mode": "stage",
@@ -1456,7 +1456,7 @@ class FireAuditTestCase(unittest.TestCase):
                 "category": "upper_floor",
                 "floor_label": "2 этаж",
                 "floor_order": 2,
-                "placement_sequence": 1,
+                "placement_sequence": 3,
                 "number_entity_ids": ["N3"],
                 "remark_entity_ids": ["R3"],
                 "source_mode": "compliance",
@@ -1464,6 +1464,7 @@ class FireAuditTestCase(unittest.TestCase):
         ]
         recorded = self.app.runs.record_final_numbering("test", run_id, items)
         self.assertEqual(recorded["status"], "verified")
+        self.assertEqual(recorded["order_policy"], "spatial_rows")
         self.assertTrue(self.app.runs.validate_final_numbering("test", run_id)["ok"])
 
         items[0]["final_number"] = 2

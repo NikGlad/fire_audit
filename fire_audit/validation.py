@@ -1504,9 +1504,11 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
     }
 
 
-def validate_final_numbering(items: list[dict[str, Any]]) -> dict[str, Any]:
+def validate_final_numbering(items: list[dict[str, Any]], *, order_policy: str = "spatial_rows") -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
+    if order_policy not in {"spatial_rows", "legacy_categories"}:
+        return {"ok": False, "errors": ["Неизвестная версия порядка нумерации"], "warnings": []}
     if not isinstance(items, list):
         return {"ok": False, "errors": ["Финальная нумерация должна быть списком"], "warnings": []}
     if not items:
@@ -1527,7 +1529,7 @@ def validate_final_numbering(items: list[dict[str, Any]]) -> dict[str, Any]:
             errors.append(f"{label}: неизвестная группа финальной нумерации")
         sequence = item.get("placement_sequence")
         if not isinstance(sequence, int) or sequence < 1:
-            errors.append(f"{label}: не указан порядок замечания внутри этажа или рамки")
+            errors.append(f"{label}: не указан глобальный порядок по расположению снизу вверх, слева направо")
         if not item.get("number_entity_ids"):
             errors.append(f"{label}: не указан объект номера в рамке замечания")
         if not item.get("remark_entity_ids"):
@@ -1555,20 +1557,32 @@ def validate_final_numbering(items: list[dict[str, Any]]) -> dict[str, Any]:
             if category == "upper_floor" and float(floor_order) <= floor_min:
                 errors.append(f"{item.get('id') or 'замечание'}: верхний этаж должен следовать после нижнего")
 
-    rank = {"lowest_floor": 0, "stage_frame": 1, "upper_floor": 2}
+    # The caller establishes spatial order from the current drawing. Categories
+    # describe the groups but must not reorder the stage frame or reset a floor.
+    sequences = [item.get("placement_sequence") for item in items]
+    if order_policy == "spatial_rows" and (
+            any(not isinstance(value, int) or value < 1 for value in sequences) or
+            sorted(sequences) != expected_numbers):
+        errors.append("Глобальный порядок расположения должен идти от 1 без повторов, пропусков и сброса на каждом этаже")
 
-    def expected_key(item: dict[str, Any]) -> tuple[float, float, float]:
-        category = item.get("category")
-        group_rank = float(rank.get(category, 99))
-        floor_order = float(item.get("floor_order", 0) or 0) if category == "upper_floor" else 0.0
-        sequence = float(item.get("placement_sequence", 0) or 0)
-        return group_rank, floor_order, sequence
+    def expected_key(item: dict[str, Any]) -> tuple[float, float, int]:
+        value = item.get("placement_sequence")
+        sequence = value if isinstance(value, int) and value > 0 else 10**9
+        if order_policy == "legacy_categories":
+            # Only for saved registries predating the spatial-order policy.
+            category = item.get("category")
+            rank = {"lowest_floor": 0, "stage_frame": 1, "upper_floor": 2}
+            floor = item.get("floor_order", 0)
+            floor = float(floor) if category == "upper_floor" and isinstance(floor, (int, float)) else 0.0
+            return rank.get(category, 99), floor, sequence
+        return 0, 0, sequence
 
     by_number = sorted(items, key=lambda row: row.get("final_number", 10**9))
     expected_order = sorted(items, key=expected_key)
     actual_ids = [item.get("id") or id(item) for item in by_number]
     expected_ids = [item.get("id") or id(item) for item in expected_order]
     if actual_ids != expected_ids:
-        errors.append("Нарушен порядок: нижний этаж, рамка этапизации, затем верхние этажи по возрастанию")
+        errors.append("Нарушен порядок сохранённой исторической нумерации" if order_policy == "legacy_categories" else
+                      "Нарушен порядок: все замечания снизу вверх, в одном ряду слева направо, от 1 до последнего на кровле; старые номера и категории не задают очередь")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}

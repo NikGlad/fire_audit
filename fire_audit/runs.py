@@ -115,7 +115,7 @@ MODE_STEPS = {
         "Создать отдельное замечание и отдельные лучи для каждого этажа.",
         "Проверить правильность целей лучей, общую точку, наложения и сохранность существующей работы.",
         "Проверить каждый созданный объект: вся графика нарушения и варианты решения в теле замечания должны быть точно в слое экспертиза, самостоятельные фиолетовые пояснения — точно в слое экспертиза пояснения; все свойства объектов — ByLayer, кроме явного веса всех лучей 0,00 мм.",
-        "После полной проверки всех блоков выполнить сквозную нумерацию: нижний этаж, рамка этапизации, затем верхние этажи по возрастанию.",
+        "При полной нумерации старые номера не учитывать: все выданные замечания нумеровать по расположению снизу вверх, в одном ряду слева направо, начиная с 1 и до последнего замечания на кровле; рамку этапизации включать по её положению без отдельной очереди.",
     ],
     "article89": [
         "Закрепить правильный открытый DWG и подтвердить его имя.",
@@ -1236,6 +1236,7 @@ class RunStore:
         validation = validate_final_numbering(items)
         registry = loaded["registry"]
         registry["final_numbering"] = {
+            "order_policy": "spatial_rows",
             "status": "verified" if validation["ok"] else "needs_correction",
             "items": copy.deepcopy(items),
             "validation": validation,
@@ -1247,7 +1248,8 @@ class RunStore:
     def validate_final_numbering(self, slug: str, run_id: str) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
         numbering = loaded["registry"].get("final_numbering", {})
-        result = validate_final_numbering(numbering.get("items", []))
+        result = validate_final_numbering(
+            numbering.get("items", []), order_policy=numbering.get("order_policy", "legacy_categories"))
         result.update({"run_id": run_id, "status": numbering.get("status", "not_started")})
         return result
 
