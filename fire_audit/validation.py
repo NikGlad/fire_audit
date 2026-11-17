@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 import math
+import re
 from .dwg_selection import has_source_preservation_evidence
 from .instruction_contracts import approved_rule_text_errors
 
@@ -13,6 +14,7 @@ VIOLATION_GRAPHICS_LAYER = "экспертиза"
 PURPLE_EXPLANATIONS_LAYER = "экспертиза пояснения"
 PURPLE_OBJECT_ROLES = {"purple_explanation"}
 TEXT_OBJECT_ROLES = {"main_text", "number", "purple_explanation", "solution_variant", "measurement_text"}
+GROUP_OBJECT_ROLES = {"main_text", "number", "frame", "purple_explanation", "solution_variant"}
 CREATED_OBJECT_ROLES = {
     "main_text",
     "number",
@@ -114,6 +116,26 @@ def _validate_ray_origin(finding_id: str, autocad: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _editorial_source(finding: dict[str, Any]) -> bool:
+    """A documented heading/separator has no independent normative requirement."""
+    classification = finding.get("source_classification", {})
+    output = finding.get("output", {})
+    autocad = finding.get("autocad", {})
+    return (
+        isinstance(classification, dict)
+        and classification.get("kind") in {"editorial_heading", "editorial_separator", "editorial_note"}
+        and classification.get("verified") is True
+        and bool(str(classification.get("reason", "")).strip())
+        and bool(str(classification.get("evidence", "")).strip())
+        and bool(finding.get("source_text_id")) and bool(finding.get("source_text"))
+        # An explicit legal clause cannot be exempted by relabelling its record.
+        and not re.search(r"(?:\bстатья\b|\bст\.|\bпункт\b|\bп\.)\s*\d", str(finding.get("source_text", "")), re.IGNORECASE)
+        and finding.get("decision", {}).get("status") == "not_applicable"
+        and not any(output.get(key) for key in ("issued", "stage_is_issued", "is_general_requirement", "remark_text"))
+        and not any(autocad.get(key) for key in ("target_entity_ids", "ray_entity_ids", "ray_required", "ray_planned", "created_objects", "reused_objects"))
+    )
+
+
 def _validate_individual_analysis(finding: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     finding_id = finding.get("id") or "без id"
@@ -139,9 +161,10 @@ def _validate_individual_analysis(finding: dict[str, Any]) -> list[str]:
         ("requirement_summary", "краткое содержание требования"),
     ):
         require_text(norm, key, label)
-    if not isinstance(norm.get("pages_read"), list) or not norm.get("pages_read"):
+    editorial = _editorial_source(finding)
+    if not editorial and (not isinstance(norm.get("pages_read"), list) or not norm.get("pages_read")):
         errors.append(f"{finding_id}: не указаны прочитанные страницы нормативного документа")
-    if not isinstance(norm.get("related_provisions_read"), list) or not norm.get("related_provisions_read"):
+    if not editorial and (not isinstance(norm.get("related_provisions_read"), list) or not norm.get("related_provisions_read")):
         errors.append(f"{finding_id}: не перечислены прочитанные связанные положения")
 
     for key, label in (
@@ -222,7 +245,7 @@ def _validate_individual_analysis(finding: dict[str, Any]) -> list[str]:
         "no_copied_explanation_verified",
     )
     if any(second_pass.get(key) is not True for key in second_pass_checks
-           if not (key == "norm_reopened" and _preserved_common_system_text(finding))):
+           if not (key == "norm_reopened" and (editorial or _preserved_common_system_text(finding)))):
         errors.append(f"{finding_id}: обязательная повторная проверка выполнена не полностью")
     return errors
 
@@ -312,10 +335,21 @@ def _validate_stairwell_facade_opening_clearance(
     return errors
 
 
-def _mandatory_material_requirement(finding: dict[str, Any]) -> bool:
-    """The explicit material-policy exception is not a finding of a physical defect."""
+def _mandatory_user_requirement(finding: dict[str, Any]) -> bool:
+    """Only enumerated user policies can issue a requirement with unknown facts."""
     output = finding.get("output", {})
     basis = output.get("mandatory_requirement", {})
+    allowed = {
+        "material_or_fire_resistance": {"doc_03_056", "doc_25_079", "doc_25_080"},
+        "stairwell_equipment": {"doc_03_060", "doc_03_061"},
+    }
+    if not isinstance(basis, dict) or not isinstance(basis.get("scope"), str):
+        return False
+    if basis.get("scope") == "stairwell_equipment":
+        points = {"doc_03_060": {"4.4.9"}, "doc_03_061": {"4.4.9", "4.4.12", "5.4.16"}}
+        norm_points = set(re.findall(r"\d+(?:\.\d+)+", str(finding.get("norm", {}).get("point", ""))))
+        if not norm_points.intersection(points.get(basis.get("rule_id"), set())):
+            return False
     return (
         finding.get("mode") == "compliance"
         and finding.get("decision", {}).get("status") == "insufficient_data"
@@ -323,8 +357,9 @@ def _mandatory_material_requirement(finding: dict[str, Any]) -> bool:
         and output.get("issued") is True
         and output.get("is_general_requirement") is True
         and isinstance(basis, dict)
-        and basis.get("rule_id") in {"doc_03_056", "doc_25_079", "doc_25_080"}
-        and basis.get("scope") == "material_or_fire_resistance"
+        and basis.get("rule_id") in allowed.get(basis.get("scope"), set())
+        and output.get("actual_violation_asserted") is not True
+        and (basis.get("scope") != "stairwell_equipment" or output.get("actual_violation_asserted") is False)
         and basis.get("applicability_verified") is True
         and basis.get("unknown_characteristic_not_asserted_as_defect") is True
         and bool(str(basis.get("reason", "")).strip())
@@ -333,7 +368,7 @@ def _mandatory_material_requirement(finding: dict[str, Any]) -> bool:
 
 def _issued_graphics_required(finding: dict[str, Any]) -> bool:
     status = finding.get("decision", {}).get("status", "not_reviewed")
-    if _mandatory_material_requirement(finding):
+    if _mandatory_user_requirement(finding):
         return True
     if status in NON_ISSUED_REVIEWED:
         return False
@@ -447,6 +482,12 @@ def _preserved_existing_graphic(item: dict[str, Any], finding: dict[str, Any]) -
 def _source_layer_for_graphic(item: dict[str, Any], finding: dict[str, Any]) -> str | None:
     """Resolve an exact layer from the reread source record, never an unbacked override."""
     autocad = finding.get("autocad", {})
+    # Standalone text labels are measurements even when addressed by a ray.
+    # A native Dimension remains governed by the dimension/source-layer rules.
+    if item.get("role") == "measurement_text":
+        if str(item.get("entity_type", "")).lower() not in {"text", "dbtext", "mtext", "acdbtext", "acdbmtext"}:
+            return None
+        return "экспертиза обмеры"
     reused = autocad.get("reused_objects", [])
     if item in reused and item.get("role") in {"main_text", "purple_explanation", "solution_variant"}:
         return item.get("original_layer") if _reused_object_valid(item) else None
@@ -649,6 +690,74 @@ def _validate_created_graphics(finding: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _group_objects(finding: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {str(row.get("entity_id")): row
+            for row in (_result_graphics_rows(finding.get("autocad", {})) or [])
+            if isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES}
+
+
+def _validate_reused_group(finding: dict[str, Any]) -> list[str]:
+    """Reusing a full reread group must not masquerade as creating a copy."""
+    prefix = f"{finding.get('id') or 'без id'}: существующая группа замечания"
+    ac = finding.get("autocad", {})
+    source = ac.get("source_group", {})
+    errors = []
+    if (source.get("copy_source") != "existing_result_group"
+            or source.get("copy_method") != "reuse_verified_group"):
+        errors.append(f"{prefix}: не подтверждён способ повторного использования группы")
+    if source.get("created_copy_entity_ids") or any(
+        isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES
+        for row in ac.get("created_objects", [])
+    ):
+        errors.append(f"{prefix}: повторное использование нельзя записывать как создание копий")
+    rows = ac.get("reused_objects", [])
+    core = [row for row in rows if isinstance(row, dict) and row.get("role") in GROUP_OBJECT_ROLES] if isinstance(rows, list) else []
+    for role in ("main_text", "number", "frame"):
+        if sum(row.get("role") == role for row in core) != 1:
+            errors.append(f"{prefix}: требуется один существующий объект роли {role}")
+    if any(not _reused_object_valid(row) for row in core):
+        errors.append(f"{prefix}: не подтверждены происхождение и повторное чтение свойств полной группы")
+    if source.get("left_explanation_present") is True and not any(row.get("role") == "purple_explanation" for row in core):
+        errors.append(f"{prefix}: отсутствует существующее пояснение группы")
+    if ac.get("status") not in {"applied", "post_checked"}:
+        errors.append(f"{prefix}: существующая группа не проверена после размещения")
+    return errors
+
+
+def _linked_group_errors(finding: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> list[str]:
+    ac = finding.get("autocad", {})
+    linked_id = ac.get("linked_finding_id")
+    output_link = finding.get("output", {}).get("linked_finding_id")
+    if not linked_id and not output_link:
+        return []
+    prefix = f"{finding.get('id')}: связь с существующей группой"
+    owner = by_id.get(str(linked_id))
+    if (not owner or owner is finding or (output_link and output_link != linked_id)
+            or owner.get("autocad", {}).get("linked_finding_id")
+            or ac.get("source_group", {}).get("copy_case") != "reuse_existing_group"
+            or not _issued_graphics_required(owner)):
+        return [f"{prefix}: требуется ссылка на самостоятельное выданное замечание текущего реестра"]
+    errors = _validate_reused_group(finding)
+    owner_ac = owner.get("autocad", {})
+    if (owner_ac.get("status") not in {"applied", "post_checked"}
+            or _normalize_floor(ac.get("floor")) != _normalize_floor(owner_ac.get("floor"))):
+        errors.append(f"{prefix}: группа-основание должна быть проверена на том же этаже")
+    core, original = _group_objects(finding), _group_objects(owner)
+    if not core or set(core) != set(original):
+        errors.append(f"{prefix}: состав и AutoCAD-id группы не совпадают с основанием")
+    else:
+        for entity_id, row in core.items():
+            for key in ("role", "entity_type", "layer", "text_style", "contents", "properties_after"):
+                if row.get(key) != original[entity_id].get(key):
+                    errors.append(f"{prefix}: свойства объекта {entity_id} не совпадают с основанием")
+                    break
+    if ac.get("placement", {}).get("sequence_index") != owner_ac.get("placement", {}).get("sequence_index"):
+        errors.append(f"{prefix}: номер размещения не совпадает с основанием")
+    if finding.get("output", {}).get("final_numbers") != owner.get("output", {}).get("final_numbers"):
+        errors.append(f"{prefix}: итоговый номер не совпадает с основанием")
+    return errors
+
+
 def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: list[dict] | None = None) -> list[str]:
     errors: list[str] = []
     if finding.get("mode") != "compliance" or not _issued_graphics_required(finding):
@@ -707,8 +816,11 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
 
     copy_case = source_group.get("copy_case")
     copy_source = source_group.get("copy_source")
-    if copy_case not in {"first_occurrence", "repeated_floor"}:
-        errors.append(f"{prefix}: не указан случай first_occurrence или repeated_floor")
+    reuse = copy_case == "reuse_existing_group"
+    if copy_case not in {"first_occurrence", "repeated_floor", "reuse_existing_group"}:
+        errors.append(f"{prefix}: не указан случай first_occurrence, repeated_floor или reuse_existing_group")
+    if reuse:
+        errors.extend(_validate_reused_group(finding))
     if copy_case == "first_occurrence":
         if copy_source != "source_approved_block":
             errors.append(f"{prefix}: первое применение должно копироваться из source_approved_block")
@@ -734,7 +846,7 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
                             or restored["source_fragment"] not in reconciliation["full_template_text"]):
                         errors.append(f"{prefix}: восстановленная ветка должна быть точным фрагментом полного шаблона с основанием")
 
-    if source_group.get("copy_method") != "copy_existing_complete_group":
+    if not reuse and source_group.get("copy_method") != "copy_existing_complete_group":
         errors.append(f"{prefix}: требуется копирование существующей полной группы")
     if source_group.get("manual_text_creation_used") is not False:
         errors.append(f"{prefix}: запрещено создавать или набирать новый MText замечания")
@@ -751,6 +863,8 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
         "text_styles_preserved",
         "relative_positions_preserved",
     ):
+        if reuse and key == "left_explanation_copied_when_present":
+            continue
         if source_group.get(key) is not True:
             errors.append(f"{prefix}: признак {key} должен быть true")
     if copy_case == "repeated_floor" and source_group.get("repeated_floor_group_copied_from_actualized_group") is not True:
@@ -784,7 +898,7 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
         copied_ids = {
             str(value) for value in source_group.get("created_copy_entity_ids", []) if str(value).strip()
         }
-        if not copied_ids:
+        if not reuse and not copied_ids:
             errors.append(f"{prefix}: не записаны идентификаторы созданных копий группы")
         created_group_ids = {
             str(item.get("entity_id"))
@@ -814,8 +928,16 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
     autocad = finding.get("autocad", {})
 
     status = decision.get("status", "not_reviewed")
-    mandatory_material_output = _mandatory_material_requirement(finding)
-    if for_application and (status in {"violation", "compliant", "not_applicable"} or mandatory_material_output):
+    mandatory_policy_output = _mandatory_user_requirement(finding)
+    if mandatory_policy_output and output.get("mandatory_requirement", {}).get("scope") == "stairwell_equipment":
+        if _normalize_floor(autocad.get("target_floor")) != "2":
+            errors.append(f"{finding_id}: по обязательному правилу указатель лестничной клетки должен быть на втором этаже")
+        target_ids = set(autocad.get("target_entity_ids", []))
+        cloud_ids = {row.get("entity_id") for row in (_result_graphics_rows(autocad) or [])
+                     if isinstance(row, dict) and row.get("role") == "cloud"}
+        if not target_ids or not target_ids.issubset(cloud_ids):
+            errors.append(f"{finding_id}: обязательное требование лестничной клетки должно ссылаться на проверенное облако")
+    if for_application and (status in {"violation", "compliant", "not_applicable"} or mandatory_policy_output):
         errors.extend(validate_source_reading(finding))
     is_general = bool(output.get("is_general_requirement"))
     target_graphics = bool(autocad.get("target_entity_ids"))
@@ -829,7 +951,7 @@ def validate_finding(finding: dict[str, Any], for_application: bool = False, *, 
     # when the design facts remain insufficient. Non-issued findings keep the
     # prohibition on rays and target graphics.
     explicit_stage_output = finding.get("mode") == "stage" and output.get("stage_is_issued") is True
-    non_issue_required = status in NON_ISSUED_REVIEWED and not (explicit_stage_output or mandatory_material_output)
+    non_issue_required = status in NON_ISSUED_REVIEWED and not (explicit_stage_output or mandatory_policy_output)
     non_issue_planned = bool(str(non_issue.get("text", "")).strip()) and non_issue.get("green") is True
     # A reviewed non-issue needs evidence in the registry, not a drawing note.
     non_issue_note_present = bool(str(non_issue.get("text", "")).strip() or non_issue.get("entity_id"))
@@ -1119,6 +1241,8 @@ def validate_source_reading(finding: dict[str, Any]) -> list[str]:
     reading = finding.get("analysis", {}).get("source_reading", {})
     if not isinstance(reading, dict):
         return [f"{prefix}: неверный формат журнала чтения источников"]
+    if _editorial_source(finding):
+        return []
     documents = reading.get("required_documents", [])
     if not isinstance(documents, list) or not documents:
         return [f"{prefix}: не зафиксировано полное чтение необходимых нормативных источников"]
@@ -1181,6 +1305,7 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
     all_purple_explanations_on_expertise_explanations_layer = True
     checked_entity_ids: list[str] = []
     seen_findings: dict[str, dict[str, Any]] = {}
+    findings_by_id = {str(f.get("id")): f for f in registry.get("findings", [])}
     for finding in registry.get("findings", []):
         item_errors, item_warnings = validate_finding(finding, for_application=for_application,
                                                      eligible_rule_text_sources=registry.get("eligible_rule_text_sources"))
@@ -1195,6 +1320,9 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
         autocad = finding.get("autocad", {})
         finding_id = str(finding.get("id") or "без id")
         source_group = autocad.get("source_group", {})
+        linked_errors = _linked_group_errors(finding, findings_by_id)
+        errors.extend(linked_errors)
+        verified_link = bool(autocad.get("linked_finding_id")) and not linked_errors
         if (
             for_application
             and finding.get("mode") == "compliance"
@@ -1243,12 +1371,12 @@ def validate_registry(registry: dict[str, Any], for_application: bool = False) -
         status = finding.get("decision", {}).get("status")
         output = finding.get("output", {})
         is_general = bool(output.get("is_general_requirement"))
-        issued_output = status == "violation" or (is_general and status not in NON_ISSUED_REVIEWED) or _mandatory_material_requirement(finding)
+        issued_output = status == "violation" or (is_general and status not in NON_ISSUED_REVIEWED) or _mandatory_user_requirement(finding)
         if for_application and issued_output:
             autocad = finding.get("autocad", {})
             floor = str(autocad.get("floor", "")).strip()
             sequence_index = autocad.get("placement", {}).get("sequence_index")
-            if floor and isinstance(sequence_index, int):
+            if floor and isinstance(sequence_index, int) and not verified_link:
                 placement_sequences.setdefault(floor, []).append(sequence_index)
         if for_application:
             finding_id = str(finding.get("id") or "без id")
