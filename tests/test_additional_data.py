@@ -68,7 +68,8 @@ class AdditionalDataTests(unittest.TestCase):
                 self.assertEqual(context['additional_data'], self.data)
                 self.assertEqual(context['additional_data_storage_key'], 'barrier_assessment')
                 self.assertEqual(context['additional_data_scope'], 'all_work_modes_of_selected_project')
-            for variant in ('full_execution', 'analysis_word'):
+            variants = ('data_word',) if mode == 'data_collection' else ('full_execution', 'analysis_word')
+            for variant in variants:
                 with self.subTest(mode=mode, variant=variant):
                     result = self.app.runs.create('shared-inputs', mode, variant)
                     self.assertEqual(result['run']['project_snapshot']['barrier_assessment'], self.data)

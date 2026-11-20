@@ -45,6 +45,11 @@ class DwgSelectionTests(unittest.TestCase):
                 result = self.app.runs.create('dwg-test', mode)
                 run = result['run']
                 text = Path(result['task_file']).read_text(encoding='utf-8')
+                if mode == 'data_collection':
+                    self.assertEqual(run['hard_constraints']['default_dwg_selection'], 'provided_materials_only')
+                    self.assertFalse(run['hard_constraints']['assistant_modifies_autocad'])
+                    self.assertFalse(run['hard_constraints']['blank_dwg_location_blocks_work'])
+                    continue
                 self.assertIn('По умолчанию работай с открытым файлом или файлами DWG', text)
                 self.assertIn('Пустое поле не блокирует начало работы', text)
                 self.assertIn('более позднее явное указание пользователя в чате', text)

@@ -1429,6 +1429,8 @@ class RunStore:
         if run["mode"] == "data_collection":
             return (
                 f"# Сбор данных — {project.get('name', run['project_slug'])}\n\n{steps}\n\n"
+                f"{additional_inputs_markdown(project, include_assessment_notes=False)}\n\n"
+                f"{fire_pump_rooms_markdown(project)}\n\n"
                 f"Исходный снимок паспорта выбранного объекта:\n```json\n{json.dumps(project, ensure_ascii=False, indent=2)}\n```\n\n"
                 "Перед сохранением через save_project перечитай текущий паспорт. Сохрани сведения и проверь их повторным чтением. "
                 "Запиши источники и результаты в историю запуска. Зарегистрируй Word и проверку качества через "
