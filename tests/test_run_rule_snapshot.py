@@ -55,6 +55,32 @@ class RunRuleSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.app.runs.create("collection", "compliance", "data_word")
 
+    def test_collection_registers_supplied_plan_and_requires_explanation(self):
+        source = self.root / "source.dwg"
+        source.write_bytes(b"source fixture")
+        for provided_at_start in (True, False):
+            with self.subTest(provided_at_start=provided_at_start):
+                slug = "early" if provided_at_start else "late"
+                project = self.app.projects.create(slug, slug)
+                if provided_at_start:
+                    project["dwg"]["path"] = str(source)
+                    self.app.projects.save(slug, project)
+                result = self.app.runs.create(slug, "data_collection")
+                run = result["run"]
+                run_id = run["run_id"]
+                self.assertEqual(run["hard_constraints"]["save_separate_result_dwg"], provided_at_start)
+                if provided_at_start:
+                    validation = self.app.runs.validate(slug, run_id, for_application=True)
+                    self.assertTrue(any("под планом первого этажа" in text for text in validation["errors"]))
+                dwg = source.with_name(f"source__data_collection__{run_id}.dwg")
+                dwg.write_bytes(b"result fixture")
+                actions = self.app.runs.record_result_dwg(slug, run_id, str(dwg), source_path=str(source),
+                    source_document_contains_results=False, copy_did_not_change_open_source_identity=True)
+                self.assertEqual(actions["result_copy_path"], str(dwg))
+                self.assertFalse(self.app.runs.project_history(slug)["runs"][0]["result_complete"])
+                validation = self.app.runs.validate(slug, run_id, for_application=True)
+                self.assertIn("Укажите AutoCAD-id проверенного пояснения для объекта", validation["errors"])
+
     def append_canonical_text(self, document, marker):
         path = self.root / 'knowledge/rule_blocks.json'
         catalogue = read_json(path)

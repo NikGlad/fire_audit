@@ -89,6 +89,7 @@ MODE_STEPS = {
         "Прочитать текущий паспорт, вводные и предоставленные для сбора источники выбранного объекта.",
         "Сопоставить характеристики, сохранить подтверждённые данные, основания, допущения и открытые вопросы в паспорте.",
         "Сформировать файл данных по сохранённому паспорту и включить пояснение для объекта по шаблону этапизации.",
+        "Если предоставлен DWG с планом первого этажа, поместить это пояснение под общим планом первого этажа на слое «экспертиза пояснения» в отдельной копии DWG.",
         "Сверить документ с паспортом, проверить все страницы и зарегистрировать итоговый Word-файл.",
     ],
     "stage": [
@@ -285,7 +286,10 @@ class RunStore:
         full_execution = task_variant == "full_execution"
         object_norms = task_variant == "object_norms"
         source_selection_word = mode in {"compliance", "actualization_protocol"} and task_variant == "analysis_word"
-        cad_result = full_execution or source_selection_word
+        source_dwg = explicit_dwg_path(dwg_location(project))
+        collection_dwg = (mode == "data_collection" and project.get("provided_materials", {}).get("plans") is not False
+                          and bool(source_dwg) and Path(source_dwg).is_file())
+        cad_result = full_execution or source_selection_word or collection_dwg
         word_report_name = OBJECT_NORMS_REPORT if object_norms else "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
         if mode == "data_collection":
             word_report_name = "ДАННЫЕ_ОБЪЕКТА.docx"
@@ -339,7 +343,7 @@ class RunStore:
             ] if object_norms else [*MODE_STEPS[mode],
                                      *(["Для Word-задания отметить внешним зелёным цветом и пронумеровать 1, 2, 3, … только подтверждённо выдаваемые исходные группы замечаний слева от планов в отдельной копии DWG; при актуализации не помечать и не перенумеровывать уже выданные у планов группы; замечания этапизации исключить из этой последовательности; внутренние красные и фиолетовые цвета сохранить."]
                                        if source_selection_word else []),
-                                     *(RESULT_DWG_STEPS if full_execution else [])]),
+                                     *(RESULT_DWG_STEPS if full_execution or collection_dwg else [])]),
             "hard_constraints": {
                 "instruction_policy_version": 2,
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
@@ -362,8 +366,9 @@ class RunStore:
                 "assistant_reads_autocad_directly": True,
                 "assistant_modifies_autocad": cad_result,
                 "source_remark_selection_word_only": source_selection_word,
+                "first_floor_explanation_dwg": collection_dwg,
                 "allowed_word_autocad_writes": ("external_entity_color_and_selected_source_remark_number_only"
-                                                if source_selection_word else "none"),
+                                                if source_selection_word else "first_floor_explanation_only" if collection_dwg else "none"),
                 "source_remark_selection_color_aci": 3 if source_selection_word else None,
                 "source_remark_selection_numbering": "consecutive_selected_source_groups_excluding_stage" if source_selection_word else "none",
                 "source_remark_inline_colors_must_be_preserved": source_selection_word,
@@ -733,7 +738,8 @@ class RunStore:
         else:
             status = "Задание соответствует текущим правилам и паспорту. Это не подтверждение завершённости проверки."
         if run["mode"] == "data_collection":
-            workflow = "Заполни паспорт выбранного объекта и сформируй по его актуальным данным ДАННЫЕ_ОБЪЕКТА.docx."
+            workflow = ("Заполни паспорт выбранного объекта и сформируй по его актуальным данным ДАННЫЕ_ОБЪЕКТА.docx. "
+                        "При предоставлении DWG с планом первого этажа выдай также копию с пояснением под этим планом.")
         elif run["task_variant"] == "object_norms":
             workflow = (
                 "Собери применимые к выбранному объекту требования СП по редакции на дату ГПЗУ: проверь "
@@ -1061,7 +1067,9 @@ class RunStore:
     ) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
         run = loaded["run"]
-        if not run.get("hard_constraints", {}).get("save_separate_result_dwg"):
+        # A floor plan may be supplied in chat after a data-collection run was created.
+        later_collection_plan = run["mode"] == "data_collection" and explicit_dwg_path(source_path)
+        if not (run.get("hard_constraints", {}).get("save_separate_result_dwg") or later_collection_plan):
             raise ValueError("В задании с итоговым Word-файлом итоговый DWG не создаётся")
         registry = loaded["registry"]
         source_text = explicit_dwg_path(source_path) if source_path is not None else resolved_source_path(run, registry)
@@ -1173,6 +1181,14 @@ class RunStore:
                 errors.append("В режиме анализа исходный DWG не должен изменяться или сохраняться")
             if actions.get("delete_requested"):
                 errors.append("В режиме анализа запрещено удалять объекты AutoCAD")
+            if (for_application and loaded["run"]["mode"] == "data_collection"
+                    and (loaded["run"]["hard_constraints"].get("first_floor_explanation_dwg")
+                         or actions.get("result_copy_required"))):
+                if not (actions.get("result_copy_created") and actions.get("source_document_kept_unchanged")
+                        and Path(actions.get("result_copy_path") or "").is_file()):
+                    errors.append("Зарегистрируйте отдельную копию DWG с пояснением под планом первого этажа")
+                if not loaded["registry"].get("quality_control", {}).get("created_or_changed_entity_ids"):
+                    errors.append("Укажите AutoCAD-id проверенного пояснения для объекта")
             if (for_application and loaded["run"].get("hard_constraints", {}).get("source_remark_selection_word_only")
                     and (not actions.get("result_copy_created") or not actions.get("result_copy_path")
                          or not actions.get("source_document_kept_unchanged"))):
@@ -1295,7 +1311,7 @@ class RunStore:
         if run["mode"] == "data_collection":
             return ("# Контроль сбора данных\n\nСверить изменённые поля с источниками и перечитать сохранённый паспорт. "
                     "Проверить применимые разделы, расхождения, источники, допущения и пояснение для объекта. "
-                    "Сопоставить DOCX с паспортом, отрендерить и визуально проверить каждую страницу.\n")
+                    "Для предоставленного DWG проверить положение пояснения под первым этажом, слой, читаемость и текст в сохранённой копии. Сопоставить DOCX с паспортом, отрендерить и визуально проверить каждую страницу.\n")
         sequence_check = (
             "- [ ] Категории проверены на всех планах и этажах (для анализа Word — адресный перечень); "
             "ПОСЛЕДОВАТЕЛЬНОСТЬ_НАНЕСЕНИЯ_ПРЕГРАД.docx выдан и явно согласован до этапа 1; "
@@ -1437,7 +1453,7 @@ class RunStore:
                 "record_word_report и record_quality_control, сверь историю и выполни validate_run с for_application=true.\n\n"
                 f"Состав сохранённых инструкций:\n```json\n{json.dumps(run['knowledge_documents'], ensure_ascii=False, indent=2)}\n```\n\n"
                 f"Итоговый файл: {folder / run['hard_constraints']['word_report_filename']}\n\n"
-                "Общие правила ниже применяй в пределах сбора данных. Графические операции и выдача замечаний в задание не входят.\n\n"
+                "При наличии предоставленного плана DWG зарегистрируй копию с пояснением через record_result_dwg с фактическим source_path. Укажи AutoCAD-id текста при record_quality_control. В копии разрешено оформление пояснения под планом первого этажа.\n\n"
                 f"{rules}"
             )
         documents = run["knowledge_documents"]

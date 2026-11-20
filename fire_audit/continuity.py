@@ -89,6 +89,9 @@ def project_history(project_dir: Path) -> dict[str, Any]:
         dwg = snapshot.get("dwg", {}) if isinstance(snapshot, dict) else {}
         plan = run.get("plan_revision", {})
         remark_errors = source_remarks_errors(run, registry, run_file.parent)
+        complete = bool(actions.get("work_completed") or report.get("status") == "complete")
+        if run.get("mode") == "data_collection" and actions.get("result_copy_required"):
+            complete = bool(actions.get("work_completed") and report.get("status") == "complete")
         entries.append({
             "run_id": run.get("run_id", run_file.parent.name),
             "created_at": run.get("created_at", ""),
@@ -103,7 +106,7 @@ def project_history(project_dir: Path) -> dict[str, Any]:
             "plan_revision": plan if isinstance(plan, dict) else {},
             "result_dwg": actions.get("result_copy_path", ""),
             "word_report": report.get("path", ""),
-            "result_complete": bool(actions.get("work_completed") or report.get("status") == "complete") and not remark_errors,
+            "result_complete": complete and not remark_errors,
             "source_remarks_complete": not remark_errors if run.get("mode") == "barrier_assessment" else None,
             "source_remarks_errors": remark_errors,
             "registry_file": str(run_file.parent / "РЕЕСТР_ПРОВЕРКИ.json"),
