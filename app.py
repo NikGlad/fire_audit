@@ -494,7 +494,10 @@ class FireAuditGUI(tk.Tk):
             "Оценка Преград": "barrier_assessment",
             "Оценка ДУ": "du_assessment",
         }
-        mode_combo = ttk.Combobox(tab, textvariable=self.mode_var, values=list(self.mode_values), state="readonly", width=34)
+        mode_combo = ttk.Combobox(
+            tab, textvariable=self.mode_var, values=list(self.mode_values),
+            state="readonly", width=34, height=len(self.mode_values),
+        )
         mode_combo.grid(row=1, column=0, sticky="w", pady=7)
         self._enable_widget_clipboard(mode_combo, editable=False)
         ttk.Label(tab, text="Результат работы", style="Heading.TLabel").grid(row=0, column=1, sticky="w", padx=8)
