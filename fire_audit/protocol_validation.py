@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import PureWindowsPath
 from typing import Any
 from .source_text_revisions import authorized_source_text_revisions
+from .annotation_revisions import changed_input_revision_state
 from .instruction_contracts import cycle_marker_state
 
 
@@ -733,6 +734,10 @@ def validate_protocol_registry(registry: dict[str, Any], for_application: bool =
     strict = for_application or complete
     state = protocol_validation_state(registry, strict=strict, standalone=True)
     errors, warnings = state["errors"], state["warnings"]
+    input_changes = changed_input_revision_state(registry)
+    errors.extend(input_changes['errors'])
+    if not errors:
+        state['owned_entity_ids'].update(input_changes['entity_ids'])
     changed = _ids(registry.get("changed_entity_ids", [])) | _ids(registry.get("created_entity_ids", []))
     layer_check = registry.get("graphics_layer_check", {}).copy()
     if strict:

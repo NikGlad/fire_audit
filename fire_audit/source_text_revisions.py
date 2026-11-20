@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from .annotation_revisions import authorized_annotation_layout
 
 
-def _changed_input_evidence(record: dict[str, Any]) -> bool:
+def _changed_input_evidence(record: dict[str, Any], *, require_comment: bool = True) -> bool:
     inputs = record.get('changed_inputs')
     if (record.get('norms_reread') is not True or not record.get('normative_edition')
             or not isinstance(inputs, list) or not inputs):
@@ -14,12 +15,42 @@ def _changed_input_evidence(record: dict[str, Any]) -> bool:
         if (not isinstance(item, dict) or not item.get('parameter') or not item.get('source')
                 or 'before' not in item or 'after' not in item or item['before'] == item['after']):
             return False
+    if not require_comment:
+        return True
     explanation = record.get('consultant_explanation')
     appendix = record.get('consultant_appendix')
     return (isinstance(explanation, str) and isinstance(appendix, str)
             and bool(re.match(r'\d{2}\.\d{2}\.\d{4} пояснение пожарного консультанта: '
                               r'Замечание изменено в связи с .+', explanation))
             and explanation in appendix)
+
+
+def _replacement_text(record: dict[str, Any], *, semantic: bool) -> str | None:
+    text = record.get('before')
+    replacements = record.get('replacements')
+    if not isinstance(text, str) or not isinstance(replacements, list) or not replacements:
+        return None
+    for change in replacements:
+        if not isinstance(change, dict):
+            return None
+        old, new = change.get('from'), change.get('to')
+        if (not isinstance(old, str) or not isinstance(new, str) or not old or old == new
+                or text.count(old) != 1):
+            return None
+        if not semantic and (not re.search(r'\d', old) or not re.search(r'\d', new)
+                             or '\\' in old or '\\' in new):
+            return None
+        markers = ['ответ заказчика', 'пояснени']
+        if not semantic or record.get('variants_reviewed') is not True:
+            markers.insert(0, 'вариант')
+        protected = [text.lower().find(marker) for marker in markers]
+        protected.extend(m.start() for m in re.finditer(
+            r'\d{2}\.\d{2}\.\d{2}(?:\d{2})?\s+(?:ответ заказчика|пояснени)', text.lower()))
+        boundary = min([p for p in protected if p >= 0], default=len(text))
+        if text.index(old) + len(old) > boundary:
+            return None
+        text = text.replace(old, new, 1)
+    return text
 
 
 def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
@@ -32,13 +63,14 @@ def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
     before = {e.get('handle'): e for e in registry.get('graphics_before', [])}
     after = {e.get('handle'): e for e in registry.get('verified_graphics', [])}
     actual_changes = set()
+    layout_ids = authorized_annotation_layout(registry)
     geometry = ('location', 'position', 'startPoint', 'endPoint', 'vertices', 'rotation',
                 'height', 'width', 'widthFactor', 'style', 'closed')
     for h in source_ids:
         if h not in before or h not in after:
             return False
         a, b = before[h], after[h]
-        if any(a.get(k) != b.get(k) for k in geometry):
+        if h not in layout_ids and any(a.get(k) != b.get(k) for k in geometry):
             return False
         if a.get('textString') != b.get('textString'):
             return False  # never authorize renumbering
@@ -57,37 +89,15 @@ def authorized_source_text_revisions(registry: dict[str, Any]) -> bool:
                 or mains[h].get('full_text') != r.get('before')
                 or h not in registry.get('changed_entity_ids', [])):
             return False
-        text = r['before']
         kind = r.get('revision_kind', 'numeric')
         if kind not in ('numeric', 'changed_inputs'):
             return False
         semantic = kind == 'changed_inputs'
         if semantic and not _changed_input_evidence(r):
             return False
-        replacements = r.get('replacements')
-        if not isinstance(replacements, list) or not replacements:
+        text = _replacement_text(r, semantic=semantic)
+        if text is None:
             return False
-        for change in replacements:
-            if not isinstance(change, dict):
-                return False
-            old, new = change.get('from'), change.get('to')
-            if (not isinstance(old, str) or not isinstance(new, str) or not old or old == new
-                    or text.count(old) != 1):
-                return False
-            if not semantic and (not re.search(r'\d', old) or not re.search(r'\d', new)
-                                 or '\\' in old or '\\' in new):
-                return False
-            markers = ['ответ заказчика', 'пояснени']
-            if not semantic or r.get('variants_reviewed') is not True:
-                markers.insert(0, 'вариант')
-            protected = [text.lower().find(marker) for marker in markers]
-            # Protect the date and formatting before an author's historical entry too.
-            protected.extend(m.start() for m in re.finditer(
-                r'\d{2}\.\d{2}\.\d{2}(?:\d{2})?\s+(?:ответ заказчика|пояснени)', text.lower()))
-            boundary = min([p for p in protected if p >= 0], default=len(text))
-            if text.index(old) + len(old) > boundary:
-                return False  # dated conversation history is immutable
-            text = text.replace(old, new, 1)
         if semantic:
             text += r['consultant_appendix']
         if text != r['after']:
