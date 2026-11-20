@@ -14,7 +14,7 @@ from typing import Any
 SUPPORTED_MODES = frozenset({
     "stage", "compliance", "article89", "actualization_protocol",
     "ar_assessment_transfer", "ar_plan_preparation", "ar_plan_comparison",
-    "protocol", "barrier_assessment", "du_assessment",
+    "protocol", "barrier_assessment", "du_assessment", "data_collection",
 })
 ID_PATTERN = re.compile(r"^[\w][\w.-]*$", re.UNICODE)
 REFERENCE_PATTERN = re.compile(r"\{\{(rule|checklist):([\w.-]+)\}\}", re.UNICODE)

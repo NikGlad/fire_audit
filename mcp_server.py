@@ -20,7 +20,7 @@ SERVER_INSTRUCTIONS = (
     "Приложение fire-audit является источником паспорта объекта, специальных вводных, постоянных инструкций, "
     "нормативного поиска и реестра. Для каждого нового запуска сначала прочитайте полный файл ЗАДАНИЕ_ДЛЯ_ЧАТА.md "
     "или текст chat_handoff: в нём находятся снимок всех данных, полный текст относящихся правил, порядок работы и контроль качества. "
-    "В каждом запуске выбран один из двух результатов: полная проверка с AutoCAD либо анализ с заданием в Word. "
+    "В режиме «Сбор данных» заполните паспорт и подготовьте по нему файл данных в Word. Основные варианты для проверок: полная проверка с AutoCAD либо анализ с заданием в Word. "
     "В полном варианте помощник самостоятельно выполняет проверку, графическую работу и повторную проверку, читая и изменяя "
     "отдельную копию через AUTOM8LABS MCP Connector for AutoCAD. В варианте Word AUTOM8LABS используется только для чтения: "
     "исходные материалы не изменяются, а помощник создаёт, рендерит и визуально проверяет понятный человеку DOCX. "
@@ -92,6 +92,7 @@ TOOLS = [
                         "ar_plan_comparison",
                         "protocol",
                         "barrier_assessment",
+                        "data_collection",
                         "du_assessment",
                     ],
                 },
@@ -141,7 +142,7 @@ TOOLS = [
     ),
     tool(
         "create_run",
-        "Создать отдельный запуск выбранной проверки: полное выполнение с AutoCAD, анализ в Word либо сбор применимых норм для объекта (mode=compliance, task_variant=object_norms). Режимы без утверждённого алгоритма создают только заготовку задания.",
+        "Создать отдельный запуск выбранной проверки: полное выполнение с AutoCAD, анализ в Word либо сбор применимых норм для объекта (mode=compliance, task_variant=object_norms). Для заполнения паспорта и выдачи файла данных в Word используйте mode=data_collection. Режимы без утверждённого алгоритма создают только заготовку задания.",
         {
             "type": "object",
             "properties": {
@@ -158,12 +159,13 @@ TOOLS = [
                         "ar_plan_comparison",
                         "protocol",
                         "barrier_assessment",
+                        "data_collection",
                         "du_assessment",
                     ],
                 },
                 "task_variant": {
                     "type": "string",
-                    "enum": ["full_execution", "analysis_word", "object_norms"],
+                    "enum": ["full_execution", "analysis_word", "object_norms", "data_word"],
                     "default": "full_execution",
                 },
                 "plan_change_status": {
@@ -713,7 +715,7 @@ class MCPServer:
                 "additional_data_scope": "all_work_modes_of_selected_project",
                 "additional_data_storage_key": "barrier_assessment",
                 "mode": mode,
-                "available_task_variants": {
+                "available_task_variants": {"data_word": "Файл данных в Word"} if mode == "data_collection" else {
                     "full_execution": "Полная проверка с AutoCAD",
                     "analysis_word": "Анализ и задание в Word",
                     "object_norms": "Нормы для объекта (использовать с mode=compliance)",

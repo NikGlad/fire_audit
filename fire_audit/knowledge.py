@@ -18,6 +18,7 @@ from .knowledge_modules import ModulePlan, PENDING_MODES, rule_scope
 
 
 MODE_FILES = {
+    "data_collection": ["33_СБОР_ДАННЫХ.md"],
     "stage": [
         "00_ПРИОРИТЕТЫ_И_БЕЗОПАСНОСТЬ.md",
         "01_ОБЩИЙ_ПРОЦЕСС.md",
@@ -429,7 +430,7 @@ class KnowledgeBase:
     def snapshot_for_mode(self, mode: str) -> KnowledgeSnapshot:
         """Read each source once; all outputs are derived from these same bytes."""
         names = self.document_names_for_mode(mode)
-        if mode != "barrier_assessment" and (self.paths.knowledge / "room_classification.json").is_file():
+        if mode not in {"barrier_assessment", "data_collection"} and (self.paths.knowledge / "room_classification.json").is_file():
             names.append("room_classification.json")
         if (self.paths.knowledge / "rule_overrides.json").is_file():
             names.append("rule_overrides.json")
@@ -544,6 +545,8 @@ class KnowledgeBase:
         terms = [term for term in query_lower.split() if len(term) > 1]
         results: list[dict[str, Any]] = []
         applicable_names = set(self.document_names_for_mode(mode)) | {"rule_blocks.json", "rule_overrides.json", "room_classification.json"} if mode else None
+        if mode == "data_collection":
+            applicable_names.discard("room_classification.json")
         documents = [self.load_document(path.name) for path in sorted(self.paths.knowledge.iterdir())
                      if path.is_file() and path.suffix.lower() in {".md", ".json", ".txt"}
                      and (applicable_names is None or path.name in applicable_names)]

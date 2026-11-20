@@ -154,11 +154,18 @@ class ChatHandoffTests(unittest.TestCase):
         self.assertNotIn('get_next_review_task', prefix)
         self.assertNotIn('prepare_cad_plan', prefix)
 
-    def test_all_modes_offer_analysis_with_human_readable_word_result(self):
+    def test_audit_modes_offer_analysis_and_data_collection_has_its_own_word_result(self):
         from fire_audit.runs import MODE_LABELS
 
         for mode in MODE_LABELS:
             with self.subTest(mode=mode):
+                if mode == 'data_collection':
+                    with self.assertRaisesRegex(ValueError, 'сбора данных'):
+                        self.create_run(mode, 'analysis_word')
+                    result = self.create_run(mode, 'data_word')
+                    self.assertEqual(result['run']['task_variant_label'], 'Файл данных в Word')
+                    self.assertIn('ДАННЫЕ_ОБЪЕКТА.docx', Path(result['task_file']).read_text(encoding='utf-8'))
+                    continue
                 result = self.create_run(mode, 'analysis_word')
                 run = result['run']
                 task = Path(result['task_file']).read_text(encoding='utf-8')

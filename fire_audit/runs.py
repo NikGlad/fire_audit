@@ -30,6 +30,7 @@ from . import history_journal
 
 
 MODE_LABELS = {
+    "data_collection": "Сбор данных",
     "stage": "Этапизация",
     "compliance": "Оценка соответствия АР",
     "article89": "Проверка части 3 статьи 89",
@@ -45,6 +46,7 @@ MODE_LABELS = {
 
 
 TASK_VARIANTS = {
+    "data_word": "Файл данных в Word",
     "full_execution": "Полная проверка с AutoCAD",
     "analysis_word": "Анализ и задание в Word",
     "object_norms": "Нормы для объекта",
@@ -83,6 +85,12 @@ RESULT_DWG_STEPS = [
 
 
 MODE_STEPS = {
+    "data_collection": [
+        "Прочитать текущий паспорт, вводные и предоставленные для сбора источники выбранного объекта.",
+        "Сопоставить характеристики, сохранить подтверждённые данные, основания, допущения и открытые вопросы в паспорте.",
+        "Сформировать файл данных по сохранённому паспорту и включить пояснение для объекта по шаблону этапизации.",
+        "Сверить документ с паспортом, проверить все страницы и зарегистрировать итоговый Word-файл.",
+    ],
     "stage": [
         "Закрепить правильный открытый DWG и подтвердить его имя.",
         "Найти рядом с планами вне блоков пользовательские замечания, запросы, пояснения и рамку этапизации.",
@@ -223,12 +231,18 @@ class RunStore:
                *, plan_change_status: str | None = None, plan_change_note: str = "") -> dict[str, Any]:
         if mode not in MODE_LABELS:
             raise ValueError(f"Неизвестный режим: {mode}")
+        if mode == "data_collection":
+            if task_variant not in {DEFAULT_TASK_VARIANT, "data_word"}:
+                raise ValueError("Для сбора данных выберите файл данных в Word")
+            task_variant = "data_word"
+        elif task_variant == "data_word":
+            raise ValueError("Файл данных в Word доступен для вида работы «Сбор данных»")
         if task_variant not in TASK_VARIANTS:
             raise ValueError(f"Неизвестный вид задания: {task_variant}")
         if task_variant == "object_norms" and mode != "compliance":
             raise ValueError("«Нормы для объекта» — отдельное задание по всему выбранному объекту; используйте режим compliance")
         project = self.projects.load(slug)
-        errors, warnings = self.projects.validate(project, require_ready=True)
+        errors, warnings = self.projects.validate(project, require_ready=mode != "data_collection")
         if errors:
             raise ValueError("; ".join(errors))
 
@@ -246,7 +260,7 @@ class RunStore:
             if plan_change_status == "initial":
                 raise ValueError("Повторный запуск нельзя считать первым")
             effective_plan_status = plan_change_status or "unconfirmed"
-        source_stamp = file_stamp(explicit_dwg_path(dwg_location(project)))
+        source_stamp = {} if mode == "data_collection" else file_stamp(explicit_dwg_path(dwg_location(project)))
         previous_project = (read_json(Path(baseline["run_file"]), {}).get("project_snapshot", {})
                             if baseline else {})
         changed_passport = passport_changes(previous_project, project) if baseline else {"count": 0, "items": [], "truncated": False}
@@ -273,6 +287,8 @@ class RunStore:
         source_selection_word = mode in {"compliance", "actualization_protocol"} and task_variant == "analysis_word"
         cad_result = full_execution or source_selection_word
         word_report_name = OBJECT_NORMS_REPORT if object_norms else "ЗАДАНИЕ_ПО_РЕЗУЛЬТАТАМ_АНАЛИЗА.docx"
+        if mode == "data_collection":
+            word_report_name = "ДАННЫЕ_ОБЪЕКТА.docx"
         run = {
             "schema_version": 1,
             "history_policy_version": 1,
@@ -327,7 +343,7 @@ class RunStore:
             "hard_constraints": {
                 "instruction_policy_version": 2,
                 "autocad_connector": "AUTOM8LABS MCP Connector for AutoCAD",
-                "default_dwg_selection": "open_autocad_drawings",
+                "default_dwg_selection": "provided_materials_only" if mode == "data_collection" else "open_autocad_drawings",
                 "blank_dwg_location_blocks_work": False,
                 "dwg_location_accepts_instructions": True,
                 "current_chat_dwg_instructions_take_precedence": True,
@@ -376,7 +392,7 @@ class RunStore:
                 "continue_independent_work_when_local_data_missing": True,
                 "intermediate_save_is_not_completion": True,
                 "verify_active_document_before_and_after_each_write": True,
-                "separate_findings_per_floor": not object_norms,
+                "separate_findings_per_floor": not object_norms and mode != "data_collection",
                 "abk_insertions_embedded_parts_and_annexes_are_public_parts": True,
                 "abk_functional_fire_hazard_class": "Ф4.3",
                 "determine_room_host_part_before_norm_selection": True,
@@ -697,11 +713,12 @@ class RunStore:
         rules_digest = run["knowledge_digest"]
         current_digest = self.knowledge.digest_for_mode(run["mode"])
         rules_current = rules_digest == current_digest
-        project_current = project_digest(run["project_snapshot"]) == project_digest(self.projects.load(slug))
+        current_project = self.projects.load(slug)
+        project_current = project_digest(run["project_snapshot"]) == project_digest(current_project)
         warnings = []
         if not rules_current:
             warnings.append("Правила изменились после создания задания. Создайте новый запуск с актуальными правилами.")
-        if not project_current:
+        if not project_current and run["mode"] != "data_collection":
             warnings.append("Паспорт объекта изменился после создания задания. Создайте новый запуск с актуальными вводными.")
         rules_intact = False
         if rules_file.is_file():
@@ -709,9 +726,15 @@ class RunStore:
             rules_intact = hashlib.sha256(frozen_rules.encode("utf-8")).hexdigest() == rules_digest
         if not rules_intact:
             warnings.append("Сохранённая версия правил отсутствует или не соответствует запуску. Создайте новый запуск.")
-        status = ("Задание соответствует текущим правилам и паспорту. Это не подтверждение завершённости проверки."
-                  if not warnings else "ЗАДАНИЕ ТРЕБУЕТ ОБНОВЛЕНИЯ:\n" + "\n".join("- " + w for w in warnings))
-        if run["task_variant"] == "object_norms":
+        if warnings:
+            status = "ЗАДАНИЕ ТРЕБУЕТ ОБНОВЛЕНИЯ:\n" + "\n".join("- " + w for w in warnings)
+        elif not project_current:
+            status = "Для продолжения сбора используй текущую редакцию паспорта."
+        else:
+            status = "Задание соответствует текущим правилам и паспорту. Это не подтверждение завершённости проверки."
+        if run["mode"] == "data_collection":
+            workflow = "Заполни паспорт выбранного объекта и сформируй по его актуальным данным ДАННЫЕ_ОБЪЕКТА.docx."
+        elif run["task_variant"] == "object_norms":
             workflow = (
                 "Собери применимые к выбранному объекту требования СП по редакции на дату ГПЗУ: проверь "
                 "перечень Росстандарта № 2594 до конкретного пункта/части, область действия и условия. "
@@ -745,6 +768,15 @@ class RunStore:
                 "контроль качества. Приложение используй для получения паспорта, правил, документов, нормативного поиска и "
                 "ведения реестра. Не направляй пользователя во вкладку «Контроль» и не используй отдельный встроенный построитель."
             )
+        if run["mode"] == "data_collection":
+            continuation = ("При изменении паспорта перечитай его и сверь источники. "
+                            "Если правила устарели, создай новый запуск.")
+        else:
+            continuation = (
+                "Если правила или паспорт изменились, сначала создай новый запуск; старый используй как историю и не перезаписывай. "
+                "При продолжении учитывай последние корректировки и фактический рабочий DWG из текущего паспорта и реестра, "
+                "не повторяй уже выполненные изменения. Факты и решения других объектов не переносить."
+            )
         text = (
             "Используй задание и сохранённые правила приложения как мои рабочие инструкции для этого объекта.\n\n"
             f"Объект: {run['project_snapshot'].get('name', slug)}\n"
@@ -764,11 +796,14 @@ class RunStore:
             "get_project_context возвращает текущие правила, которые нужно сравнить с версией запуска. "
             "Если доступа к приложению нет, используй полный текст ниже и запроси только недостающие исходные файлы; "
             "не утверждай, что локальные файлы открыты.\n"
-            "Если правила или паспорт изменились, сначала создай новый запуск; старый используй как историю и не перезаписывай. "
-            "При продолжении учитывай последние корректировки и фактический рабочий DWG из текущего паспорта и реестра, "
-            "не повторяй уже выполненные изменения. Факты и решения других объектов не переносить.\n\n"
+            f"{continuation}\n\n"
             f"{workflow}\n\n---\n\nПолный текст сохранённого задания:\n\n{task}"
         )
+        if run["mode"] == "data_collection" and not project_current:
+            import json
+            text += ("\n\nАктуальный паспорт на момент копирования задания. Используй его при расхождении "
+                     "с исходным снимком запуска.\n```json\n"
+                     + json.dumps(current_project, ensure_ascii=False, indent=2) + "\n```\n")
         if history_journal.HISTORY_INSTRUCTION not in text:
             text = history_journal.HISTORY_INSTRUCTION + "\n\n" + text
         return {"text": text, "warnings": warnings, "rules_current": rules_current,
@@ -932,7 +967,7 @@ class RunStore:
 
     def record_quality_control(self, slug: str, run_id: str, quality: dict[str, Any]) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
-        expected = (WORD_QUALITY_CHECKS if loaded["run"].get("task_variant") in {"analysis_word", "object_norms"}
+        expected = (WORD_QUALITY_CHECKS if loaded["run"].get("task_variant") in {"analysis_word", "object_norms", "data_word"}
                     else FULL_QUALITY_CHECKS)
         checks = quality.get("checks", {})
         if not isinstance(checks, dict) or set(checks) != expected:
@@ -974,7 +1009,7 @@ class RunStore:
         unresolved: list[str] | None = None,
     ) -> dict[str, Any]:
         loaded = self.load(slug, run_id)
-        if loaded["run"].get("task_variant") not in {"analysis_word", "object_norms"}:
+        if loaded["run"].get("task_variant") not in {"analysis_word", "object_norms", "data_word"}:
             raise ValueError("Word-отчёт регистрируется только для задания с итоговым DOCX")
         report = Path(str(report_path).strip()).resolve()
         folder = Path(loaded["folder"]).resolve()
@@ -1006,6 +1041,9 @@ class RunStore:
             "unresolved": questions,
             "recorded_at": utc_now(),
         }
+        if loaded["run"]["mode"] == "data_collection":
+            from .control import project_digest
+            record["passport_digest"] = project_digest(self.projects.load(slug))
         loaded["registry"]["word_report"] = record
         write_json(folder / "РЕЕСТР_ПРОВЕРКИ.json", loaded["registry"])
         write_project_history(self.projects.project_dir(slug))
@@ -1127,7 +1165,7 @@ class RunStore:
                 if protocol.get("scope_policy_version") != 2 or protocol.get("cycle_id") != loaded["run"]["run_id"]:
                     policy_errors.append("Нельзя отключить политику охвата протокола текущего цикла")
                 protocol.update(scope_policy_version=2, cycle_id=loaded["run"]["run_id"])
-        analysis_word = loaded["run"].get("task_variant") in {"analysis_word", "object_norms"}
+        analysis_word = loaded["run"].get("task_variant") in {"analysis_word", "object_norms", "data_word"}
         if analysis_word:
             actions = loaded["registry"].get("dwg_actions", {})
             errors = []
@@ -1254,6 +1292,10 @@ class RunStore:
         return result
 
     def _quality_markdown(self, run: dict[str, Any]) -> str:
+        if run["mode"] == "data_collection":
+            return ("# Контроль сбора данных\n\nСверить изменённые поля с источниками и перечитать сохранённый паспорт. "
+                    "Проверить применимые разделы, расхождения, источники, допущения и пояснение для объекта. "
+                    "Сопоставить DOCX с паспортом, отрендерить и визуально проверить каждую страницу.\n")
         sequence_check = (
             "- [ ] Категории проверены на всех планах и этажах (для анализа Word — адресный перечень); "
             "ПОСЛЕДОВАТЕЛЬНОСТЬ_НАНЕСЕНИЯ_ПРЕГРАД.docx выдан и явно согласован до этапа 1; "
@@ -1384,6 +1426,18 @@ class RunStore:
         folder = self.run_dir(run["project_slug"], run["run_id"])
         rules = (folder / "ПРАВИЛА_ЗАПУСКА.md").read_text(encoding="utf-8-sig")
         steps = "\n".join(f"{index}. {step}" for index, step in enumerate(run["steps"], 1))
+        if run["mode"] == "data_collection":
+            return (
+                f"# Сбор данных — {project.get('name', run['project_slug'])}\n\n{steps}\n\n"
+                f"Исходный снимок паспорта выбранного объекта:\n```json\n{json.dumps(project, ensure_ascii=False, indent=2)}\n```\n\n"
+                "Перед сохранением через save_project перечитай текущий паспорт. Сохрани сведения и проверь их повторным чтением. "
+                "Запиши источники и результаты в историю запуска. Зарегистрируй Word и проверку качества через "
+                "record_word_report и record_quality_control, сверь историю и выполни validate_run с for_application=true.\n\n"
+                f"Состав сохранённых инструкций:\n```json\n{json.dumps(run['knowledge_documents'], ensure_ascii=False, indent=2)}\n```\n\n"
+                f"Итоговый файл: {folder / run['hard_constraints']['word_report_filename']}\n\n"
+                "Общие правила ниже применяй в пределах сбора данных. Графические операции и выдача замечаний в задание не входят.\n\n"
+                f"{rules}"
+            )
         documents = run["knowledge_documents"]
         prior_history = read_json(folder / PRIOR_SNAPSHOT_NAME, {"runs": []})
         kind = work_kind(run["mode"], run["task_variant"])

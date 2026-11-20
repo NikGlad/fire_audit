@@ -482,6 +482,7 @@ class FireAuditGUI(tk.Tk):
         ttk.Label(tab, text="Вид работы", style="Heading.TLabel").grid(row=0, column=0, sticky="w")
         self.mode_var = tk.StringVar(value="Оценка соответствия АР")
         self.mode_values = {
+            "Сбор данных": "data_collection",
             "Этапизация": "stage",
             "Оценка соответствия АР": "compliance",
             "Часть 3 статьи 89": "article89",
@@ -508,6 +509,17 @@ class FireAuditGUI(tk.Tk):
         )
         task_variant_combo.grid(row=1, column=1, sticky="w", padx=8, pady=7)
         self._enable_widget_clipboard(task_variant_combo, editable=False)
+        standard_results = tuple(self.task_variant_values)
+        data_result = "Файл данных в Word"
+        self.task_variant_values[data_result] = "data_word"
+
+        def set_result_options(_event):
+            options = (data_result,) if self.mode_values[self.mode_var.get()] == "data_collection" else standard_results
+            task_variant_combo.configure(values=options)
+            if self.task_variant_var.get() not in options:
+                self.task_variant_var.set(options[0])
+
+        mode_combo.bind("<<ComboboxSelected>>", set_result_options, add="+")
         ttk.Button(tab, text="Сформировать и скопировать задание", command=self.create_run).grid(row=1, column=2, sticky="w", padx=8)
         ttk.Button(tab, text="Обновить историю", command=self.refresh_runs).grid(row=1, column=3, sticky="w")
         ttk.Label(tab, text="Запуски выбранного объекта", style="Heading.TLabel").grid(
@@ -930,7 +942,7 @@ class FireAuditGUI(tk.Tk):
             baseline = self.app.runs.comparison_baseline(self.current_slug, mode, task_variant)
             plan_change_status = None
             plan_change_note = ""
-            if baseline:
+            if baseline and mode != "data_collection":
                 answer = messagebox.askyesnocancel(
                     "Планы для повторной проверки",
                     "Сравниваем с непосредственно предыдущей итерацией этого же вида работы: "

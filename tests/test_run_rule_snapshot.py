@@ -31,6 +31,30 @@ class RunRuleSnapshotTests(unittest.TestCase):
             project.setdefault('barrier_assessment', {})['rooms'] = [{'number': number, 'category': category}]
             self.app.projects.save(slug, project)
 
+    def test_data_collection_starts_with_incomplete_passport_and_uses_saved_inputs(self):
+        project = self.app.projects.create("Тест сбора", "collection")
+        project["notes"] = "Учесть дополнительную секцию паспорта."
+        self.app.projects.save("collection", project)
+        result = self.app.runs.create("collection", "data_collection")
+        run = result["run"]
+        self.assertEqual(run["task_variant"], "data_word")
+        self.assertFalse(run["hard_constraints"]["save_separate_result_dwg"])
+        self.assertFalse(run["hard_constraints"]["assistant_modifies_autocad"])
+        self.assertEqual(run["hard_constraints"]["word_report_filename"], "ДАННЫЕ_ОБЪЕКТА.docx")
+        self.assert_consistent_artifacts(result)
+        handoff = self.app.runs.chat_handoff("collection", run["run_id"])
+        self.assertIn(project["notes"], handoff["text"])
+        self.assertIn("save_project", handoff["text"])
+        self.assertFalse(self.app.runs.validate("collection", run["run_id"], for_application=True)["ok"])
+        project["notes"] = "Добавлены подтверждённые вводные."
+        self.app.projects.save("collection", project)
+        handoff = self.app.runs.chat_handoff("collection", run["run_id"])
+        self.assertFalse(handoff["project_current"])
+        self.assertIn(project["notes"], handoff["text"])
+        self.assertEqual(handoff["warnings"], [])
+        with self.assertRaises(ValueError):
+            self.app.runs.create("collection", "compliance", "data_word")
+
     def append_canonical_text(self, document, marker):
         path = self.root / 'knowledge/rule_blocks.json'
         catalogue = read_json(path)
@@ -62,6 +86,9 @@ class RunRuleSnapshotTests(unittest.TestCase):
         if run['mode'] == 'barrier_assessment':
             self.assertIn('barrier_drawing_profile.json', names)
             self.assertIn('26_СОСТАВ_СХЕМЫ_ПП.md', names)
+            self.assertNotIn('room_classification.json', names)
+        elif run['mode'] == 'data_collection':
+            self.assertIn('33_СБОР_ДАННЫХ.md', names)
             self.assertNotIn('room_classification.json', names)
         else:
             self.assertIn('room_classification.json', names)

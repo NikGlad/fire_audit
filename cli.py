@@ -42,12 +42,13 @@ def parser() -> argparse.ArgumentParser:
             "ar_plan_comparison",
             "protocol",
             "barrier_assessment",
+            "data_collection",
             "du_assessment",
         ],
     )
     create_run.add_argument(
         "--task-variant",
-        choices=["full_execution", "analysis_word"],
+        choices=["full_execution", "analysis_word", "data_word"],
         default="full_execution",
         help="Вид результата: итоговый DWG или аналитическое задание DOCX",
     )

@@ -172,7 +172,8 @@
         "ar_plan_comparison",
         "protocol",
         "barrier_assessment",
-        "du_assessment"
+        "du_assessment",
+        "data_collection"
       ],
       "replaces": [],
       "text_ref": "unconfirmed_opening_infills_not_fire_rated_20260925"
