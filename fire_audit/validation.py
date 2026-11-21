@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 import math
 import re
+from .frame_layout import verified_copy_layout
 from .dwg_selection import has_source_preservation_evidence
 from .instruction_contracts import approved_rule_text_errors
 
@@ -725,13 +726,42 @@ def _restored_explanation_ids(finding: dict[str, Any]) -> set[str]:
     return ids
 
 
+def _source_layout_preserved(autocad):
+    trace = autocad.get("source_group", {})
+    if "displaced_number_frame" not in trace:
+        return trace.get("relative_positions_preserved") is True
+    # Bind the proof to the actual source and issued graphic roles.
+    keys = {"main_text": "remark_text_entity_ids", "number": "number_entity_ids",
+            "frame": "frame_entity_ids", "purple_explanation": "purple_explanation_entity_ids"}
+    old_ids = {v for key in (*keys.values(), "left_explanation_entity_ids", "other_source_element_ids")
+               for v in trace.get(key, [])}
+    issued = {o["entity_id"]: o.get("role") for o in
+              autocad.get("created_objects", []) + autocad.get("reused_objects", [])
+              if isinstance(o, dict) and o.get("entity_id")}
+    new_ids = set(trace.get("created_copy_entity_ids", [])) or {k for k, role in issued.items() if role in keys}
+    proof = trace.get("displaced_number_frame")
+    members = proof.get("members") if isinstance(proof, dict) else None
+    if not isinstance(members, list):
+        return False
+    for row in members:
+        if not isinstance(row, dict) or not isinstance(row.get("result_id"), str):
+            return False
+        role = issued.get(row["result_id"])
+        if not role or (role in keys and row.get("source_id") not in trace.get(keys[role], [])):
+            return False
+    numbers = [h for h in new_ids if issued.get(h) == "number"]
+    frames = [h for h in new_ids if issued.get(h) == "frame"]
+    return (len(numbers) == len(frames) == 1
+            and verified_copy_layout(trace, old_ids, new_ids, numbers[0], frames[0]))
+
+
 def _verified_source_explanation_side(finding: dict[str, Any]) -> str | None:
     """Preserve the template's relative layout when both source and result were reread."""
     ac = finding.get("autocad", {})
     source = ac.get("source_group", {})
     proof = source.get("explanation_layout", {})
     if (not isinstance(proof, dict) or proof.get("verified") is not True or not proof.get("evidence")
-            or source.get("relative_positions_preserved") is not True
+            or not _source_layout_preserved(ac)
             or source.get("text_styles_preserved") is not True):
         return None
     def side(main, explanation):
@@ -833,7 +863,7 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
             errors.append(f"{prefix}: нельзя приписывать утверждённому тексту отсутствующий исходный блок DWG")
         if not source_group.get("new_floor") or _normalize_floor(source_group.get("new_floor")) != _normalize_floor(autocad.get("floor")):
             errors.append(f"{prefix}: не подтверждён этаж новой группы")
-        if source_group.get("text_styles_preserved") is not True or source_group.get("relative_positions_preserved") is not True:
+        if source_group.get("text_styles_preserved") is not True or not _source_layout_preserved(autocad):
             errors.append(f"{prefix}: не подтверждено сохранение оформления полного образца")
         return errors
 
@@ -916,12 +946,13 @@ def _validate_compliance_source_copy(finding: dict[str, Any], eligible_sources: 
     for key in (
         "left_explanation_copied_when_present",
         "text_styles_preserved",
-        "relative_positions_preserved",
     ):
         if reuse and key == "left_explanation_copied_when_present":
             continue
         if source_group.get(key) is not True:
             errors.append(f"{prefix}: признак {key} должен быть true")
+    if not _source_layout_preserved(autocad):
+        errors.append(f"{prefix}: необходимо сохранить relative_positions_preserved или подтвердить исправление смещённой рамки по геометрии")
     if copy_case == "repeated_floor" and source_group.get("repeated_floor_group_copied_from_actualized_group") is not True:
         errors.append(f"{prefix}: признак repeated_floor_group_copied_from_actualized_group должен быть true")
 

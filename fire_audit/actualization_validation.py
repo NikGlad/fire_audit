@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import PureWindowsPath
 from typing import Any
 
+from .frame_layout import verified_copy_layout
 from .protocol_validation import protocol_validation_state, authorized_comment_correction
 from .source_text_revisions import authorized_source_text_revisions
 from .instruction_contracts import approved_rule_text_errors, cycle_marker_state
@@ -159,9 +160,12 @@ def validate_actualization_registry(registry: dict[str, Any], for_application: b
                     errors.append(f"{label}: текст новой группы не совпадает с полным утверждённым источником")
             else:
                 for key in ("source_group_fully_detected", "left_explanation_checked", "left_explanation_copied_when_present",
-                            "text_styles_preserved", "relative_positions_preserved", "repeated_floor_group_copied_from_actualized_group"):
+                            "text_styles_preserved", "repeated_floor_group_copied_from_actualized_group"):
                     if trace.get(key) is not True:
                         errors.append(f"{label}: не подтверждено копирование шаблона: {key}")
+                layout_ids = group_ids | set(source.get("purple_explanation_entity_ids", [])) | set(source.get("other_group_entity_ids", []))
+                if not verified_copy_layout(trace, trace.get("source_entity_ids", []), layout_ids, source.get("number_id"), source.get("frame_id")):
+                    errors.append(f"{label}: не подтверждено сохранение компоновки или исправление смещённой рамки")
             if ((not approved_text and (trace.get("source_kind") not in {"source_approved_block", "previous_actualized_compliance_group", "verified_normative_text"}
                     or len(set(trace.get("source_entity_ids", []))) < 3)) or not group_ids <= created
                     or len(added_targets) != len(targets) or source.get("ray_ids")):
